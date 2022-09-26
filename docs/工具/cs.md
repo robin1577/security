@@ -654,7 +654,7 @@ Cobalt Strike 通过团队服务器发送钓鱼邮件。
     exploit
     ```
 
-## cs-》msf
+### cs-》msf
 
 - cs要有beacon shell
 
@@ -670,9 +670,10 @@ Cobalt Strike 通过团队服务器发送钓鱼邮件。
 
 - 在CobaltStrike上的操作
 
-- - 开启⼀个监听器Listener，HOST和PORT填我们MSF监听的地址(这⾥需要注意，如果我们的MSF也是在内⽹中的话，需要将MSF的端⼝映射到公⽹地址)
-    - 这⾥⼀定要注意，创建的Listener是foreign!
-    - 然后选中计算机，右键->Spawn，选择刚刚创建的监听器MSF，然后我们的MSF即可看到成功获取了meterpreter会话
+  - 开启⼀个监听器Listener，HOST和PORT填我们MSF监听的地址(这⾥需要注意，如果我们的MSF也是在内⽹中的话，需要将MSF的端⼝映射到公⽹地址)
+  - 这⾥⼀定要注意，创建的Listener是foreign!
+  - 然后选中计算机，右键->Spawn，选择刚刚创建的监听器MSF，然后我们的MSF即可看到成功获取了meterpreter会话
+
 
 ### cs-》empire
 
