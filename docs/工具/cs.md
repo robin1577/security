@@ -717,6 +717,12 @@ Cobalt Strike 通过团队服务器发送钓鱼邮件。
 > https://422926799.github.io/posts/e5e87074.html
 >
 > https://wiki.wgpsec.org/knowledge/intranet/Aggressor-script.html
+>
+> 
+>
+> vscode商店有对应插件，但是只能代码高亮，看看能不能把文档加进去。https://github.com/Twi1ight/vscode-language-aggressorscript
+
+
 
 ### cs的脚本语言-agscript
 
@@ -1001,6 +1007,10 @@ closef($handle);
 > https://trial.cobaltstrike.com/aggressor-script
 >
 > 一定要看https://trial.cobaltstrike.com/aggressor-script/functions.html 所有的方法都在里面
+
+#### 复用代码：include
+
+- 感觉是个宏，就是把include的代码放到对应位置。
 
 #### 文件路径:
 
