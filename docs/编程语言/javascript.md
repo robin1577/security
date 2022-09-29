@@ -64,7 +64,9 @@ Vue则是更上层封装的一门框架，其中借鉴了MVVM的架构，使用�
 
 mvvm
 
-## npm
+## npm/yarn
+
+### npm
 
 > https://chinese.freecodecamp.org/news/what-is-npm-a-node-package-manager-tutorial-for-beginners/
 
@@ -80,7 +82,7 @@ npm（“Node 包管理器”）是 JavaScript 运行时 Node.js 的默认程序
 - *注册表* 是一个巨大的数据库，保存了每个包（package）的信息。
 - [*CLI*](https://docs.npmjs.com/cli/npm) 通过命令行或终端运行。开发者通过 CLI 与 npm 打交道。
 
-### npm安装
+#### npm安装
 
 npm 是依附于 node.js 的，我们可以去它的官网 https://nodejs.org/en/download/ 下载安装 node.js。
 
@@ -92,7 +94,7 @@ npm install npm@latest -g   升级最新的npm版本
 
 
 
-### package.json
+#### package.json
 
 每个 JavaScript 项目（无论是 Node.js 还是浏览器应用程序）都可以被当作 npm 软件包，并且通过  `package.json` 来描述项目和软件包信息。我们可以将  `package.json` 视为快递盒子上的运输信息。
 
@@ -117,7 +119,7 @@ npm install npm@latest -g   升级最新的npm版本
 
 就像我们通常不会读取食品包装袋上的成分表（除非你太无聊或需要知道）一样，`package-lock.json` 并不会被开发人员一行一行进行读取.
 
-### 用户如何使用 NPM
+#### 用户如何使用 NPM
 
 **npm install**
 
@@ -172,9 +174,9 @@ nvm use v8.17.0			#使用
 nvm ls
 ```
 
-## yarn
+### yarn
 
-### yarn 介绍
+#### yarn 介绍
 
 Yarn 是 Facebook, Google, Exponent 和 Tilde 开发的一款新的 JavaScript 包管理工具。 
 
@@ -217,7 +219,7 @@ Yarn 是为了弥补 npm 的一些缺陷而出现的。
     npm run serve   === yarn run serve
     ```
 
-### yarn安装
+#### yarn安装
 
 ```shell
 windows: winget install yarn 或者直接下载msi文件
@@ -244,7 +246,7 @@ yrm ls 列出当前可用的所有镜像源
 测试访问速度：yrm test taobao
 ```
 
-### 创建项目
+#### 创建项目
 
 ```shell
 yarn init   初始化一个项目，类似于git init,填写下项目详情就行。
@@ -279,7 +281,7 @@ yarn upgrade [package]@[tag]
 
 **安装项目的全部依赖**：`yarn或者 yarn install`
 
-# Electron
+## Electron
 
 > Electron是一个使用 JavaScript、HTML 和 CSS 构建桌面应用程序的框架。 嵌入 [Chromium](https://www.chromium.org/) 和 [Node.js](https://nodejs.org/) 到 二进制的 Electron 允许您保持一个 JavaScript 代码代码库并创建 在Windows上运行的跨平台应用 macOS和Linux——不需要本地开发 经验。
 >
@@ -453,13 +455,471 @@ project/
 └─ public/
 ```
 
-
 dist_electron目录存放应用打包后的安装程序。
 public目录存放项目的静态资源，此目录下的程序不会被webpack处理。
 src/background.js是主进程入口程序。
 src/main.js是渲染进程入口程序。
 
+## vscode插件开发
 
+> https://liiked.github.io/VS-Code-Extension-Doc-ZH/#/
+>
+> https://www.cnblogs.com/liuxianan/p/vscode-plugin-overview.html
+
+vscode是使用Electron技术。vscode插件可以使用TypeScript来编写（官方推荐），也可以使用JavaScript。
+
+### 安装脚手架
+
+```cmd
+npm install -g yo generator-code
+#然后创建一个项目
+yo code
+```
+
+### package
+
+- 配置扩展激活卸载的事件，入口文件路径。
+- 添加右键菜单和快捷键
+
+```json
+//常用设置
+{
+	// 插件的名字，应全部小写，不能有空格
+    "name": "vscode-plugin-demo",
+	// 插件的友好显示名称，用于显示在应用市场，支持中文
+    "displayName": "VSCode插件demo",
+	// 描述
+    "description": "VSCode插件demo集锦",
+	// 关键字，用于应用市场搜索
+    "keywords": ["vscode", "plugin", "demo"],
+	// 版本号
+    "version": "1.0.0",
+	// 发布者，如果要发布到应用市场的话，这个名字必须与发布者一致
+    "publisher": "sxei",
+	// 表示插件最低支持的vscode版本
+    "engines": {
+        "vscode": "^1.27.0"
+    },
+	// 插件应用市场分类，可选值： [Programming Languages, Snippets, Linters, Themes, Debuggers, Formatters, Keymaps, SCM Providers, Other, Extension Packs, Language Packs]
+    "categories": [
+        "Other"
+    ],
+	// 插件图标，至少128x128像素
+    "icon": "images/icon.png",
+	// 扩展的激活事件数组，可以被哪些事件激活扩展，后文有详细介绍
+    "activationEvents": [
+        "onCommand:extension.sayHello"
+    ],
+	// 插件的主入口
+    "main": "./src/extension",
+	// 贡献点，整个插件最重要最多的配置项
+    "contributes": {
+		// 插件配置项
+		"configuration": {
+            "type": "object",
+			// 配置项标题，会显示在vscode的设置页
+            "title": "vscode-plugin-demo",
+            "properties": {
+				// 这里我随便写了2个设置，配置你的昵称
+                "vscodePluginDemo.yourName": {
+                    "type": "string",
+                    "default": "guest",
+                    "description": "你的名字"
+                },
+				// 是否在启动时显示提示
+                "vscodePluginDemo.showTip": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "是否在每次启动时显示欢迎提示！"
+                }
+            }
+        },
+		// 命令
+        "commands": [
+            {
+                "command": "extension.sayHello",
+                "title": "Hello World"
+            }
+        ],
+		// 快捷键绑定
+        "keybindings": [
+            {
+                "command": "extension.sayHello",
+                "key": "ctrl+f10",
+                "mac": "cmd+f10",
+                "when": "editorTextFocus"
+            }
+        ],
+		// 菜单
+        "menus": {
+			// 编辑器右键菜单
+            "editor/context": [
+                {
+					// 表示只有编辑器具有焦点时才会在菜单中出现
+                    "when": "editorFocus",
+                    "command": "extension.sayHello",
+					// navigation是一个永远置顶的分组，后面的@6是人工进行组内排序
+                    "group": "navigation@6"
+                },
+                {
+                    "when": "editorFocus",
+                    "command": "extension.demo.getCurrentFilePath",
+                    "group": "navigation@5"
+                },
+                {
+					// 只有编辑器具有焦点，并且打开的是JS文件才会出现
+                    "when": "editorFocus && resourceLangId == javascript",
+                    "command": "extension.demo.testMenuShow",
+                    "group": "z_commands"
+                },
+                {
+                    "command": "extension.demo.openWebview",
+                    "group": "navigation"
+                }
+            ],
+			// 编辑器右上角图标，不配置图片就显示文字
+            "editor/title": [
+                {
+                    "when": "editorFocus && resourceLangId == javascript",
+                    "command": "extension.demo.testMenuShow",
+                    "group": "navigation"
+                }
+            ],
+			// 编辑器标题右键菜单
+            "editor/title/context": [
+                {
+                    "when": "resourceLangId == javascript",
+                    "command": "extension.demo.testMenuShow",
+                    "group": "navigation"
+                }
+            ],
+			// 资源管理器右键菜单
+            "explorer/context": [
+                {
+                    "command": "extension.demo.getCurrentFilePath",
+                    "group": "navigation"
+                },
+                {
+                    "command": "extension.demo.openWebview",
+                    "group": "navigation"
+                }
+            ]
+        },
+		// 代码片段
+        "snippets": [
+            {
+                "language": "javascript",
+                "path": "./snippets/javascript.json"
+            },
+            {
+                "language": "html",
+                "path": "./snippets/html.json"
+            }
+        ],
+		// 自定义新的activitybar图标，也就是左侧侧边栏大的图标
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "beautifulGirl",
+                    "title": "美女",
+                    "icon": "images/beautifulGirl.svg"
+                }
+            ]
+        },
+		// 自定义侧边栏内view的实现
+        "views": {
+			// 和 viewsContainers 的id对应
+            "beautifulGirl": [
+                {
+                    "id": "beautifulGirl1",
+                    "name": "国内美女"
+                },
+                {
+                    "id": "beautifulGirl2",
+                    "name": "国外美女"
+                },
+                {
+                    "id": "beautifulGirl3",
+                    "name": "人妖"
+                }
+            ]
+        },
+		// 图标主题
+        "iconThemes": [
+            {
+                "id": "testIconTheme",
+                "label": "测试图标主题",
+                "path": "./theme/icon-theme.json"
+            }
+        ]
+    },
+	// 同 npm scripts
+    "scripts": {
+        "postinstall": "node ./node_modules/vscode/bin/install",
+        "test": "node ./node_modules/vscode/bin/test"
+    },
+	// 开发依赖
+    "devDependencies": {
+        "typescript": "^2.6.1",
+        "vscode": "^1.1.6",
+        "eslint": "^4.11.0",
+        "@types/node": "^7.0.43",
+        "@types/mocha": "^2.2.42"
+    },
+	// 后面这几个应该不用介绍了
+    "license": "SEE LICENSE IN LICENSE.txt",
+    "bugs": {
+        "url": "https://github.com/sxei/vscode-plugin-demo/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/sxei/vscode-plugin-demo"
+    },
+	// 主页
+    "homepage": "https://github.com/sxei/vscode-plugin-demo/blob/master/README.md"
+}
+
+```
+
+### contributes
+
+```
+configuration：设置
+commands：命令
+menus：菜单
+keybindings：快捷键绑定
+languages：新语言支持
+debuggers：调试
+breakpoints：断点
+grammars
+themes：主题
+snippets：代码片段
+jsonValidation：自定义JSON校验
+views：左侧侧边栏视图
+viewsContainers：自定义activitybar
+problemMatchers
+problemPatterns
+taskDefinitions
+colors
+```
+
+### 语言插件
+
+
+
+#### 新语言支持：languages
+
+```json
+"contributes": {  
+    "languages": [
+                {
+                    //新语言的名字
+                    "id": "cna",
+                    //新语言的别名
+                    "aliases": [
+                        "Aggressor Script",
+                        "cna"
+                    ],
+                    //新语言的后缀名
+                    "extensions": [
+                        ".cna"
+                    ],
+                    //新语言的配置文件路径
+                    "configuration": "./language-configuration.json"
+                }
+            ],
+}
+```
+
+**注意**：如果你的语言配置文件以**`language-configuration.json`**结尾，那么VS Code会帮你添加代码补全和校验功能。
+
+**以下均为language-configuration.json文件设置**
+
+##### 启用/关闭注释
+
+- VS Code提供了切换注释开关的命令：
+
+    - **Toggle Line Comment**
+    - **Toggle Block Comment**
+
+- 分别来配置`comments.lineComment`控制块注释和`comments.blockComment`控制行注释。
+
+    - ```
+        {
+        	"comments": {
+        		"lineComment": "//",
+        		"blockComment": ["/*", "*/"]
+        	}
+        }
+        ```
+
+##### 定义括号
+
+- 你在VS Code中将鼠标移动到一个括号边上时，VS Code会自动高亮对应的括号。
+
+- ```json
+    {
+    	"brackets": [["{", "}"], ["[", "]"], ["(", ")"]]
+    }
+    ```
+
+- 另外，当你运行**Go to Bracket**或**Select to Bracket**时，VS Code会自动使用你的定义找到最近、最匹配的括号。
+
+##### 自动闭合符号
+
+- 当你输入一个字符的时候时，VS Code会自动帮你补全另一个单引号然后将光标放在引号中间，我们来看看是怎么做的：
+
+- ```json
+    {
+    	"autoClosingPairs": [
+    		{ "open": "{", "close": "}" },
+    		{ "open": "[", "close": "]" },
+    		{ "open": "(", "close": ")" },
+    		{ "open": "'", "close": "'", "notIn": ["string", "comment"] },
+    		{ "open": "\"", "close": "\"", "notIn": ["string"] },
+    		{ "open": "`", "close": "`", "notIn": ["string", "comment"] },
+    		{ "open": "/**", "close": " */", "notIn": ["string"] }
+    	]
+    }
+    ```
+
+##### 自动环绕符号
+
+- 当你选择了一堆文本然后输入左括号时，VS Code会对选中内容外围加上对应的括号。这个功能叫做*自动环绕符号*，你可以参考下面的代码指定这项功能：
+
+- ```
+    {
+    	"surroundingPairs": [
+    		["{", "}"],
+    		["[", "]"],
+    		["(", ")"],
+    		["'", "'"],
+    		["\"", "\""],
+    		["`", "`"]
+    	]
+    }
+    ```
+
+- 注意用户可以通过`editor.autoSurround`设置*自动环绕符号*的行为。
+
+##### 代码折叠
+
+- 在VS Code中有三种代码折叠类型：
+- 缩进折叠：这是VS Code中默认的缩进行为，当两行内容有着相同的缩进级别时，你就可以看到折叠标记了。
+- 语言配置折叠：当VS Code发现`folding.markers`同时定义了`start`和`end`时，对应区域内就会出现折叠标记。下述配置会对`//#region`和`//#endregionJSON`区域创建代码折叠标记：
+
+##### 单词匹配
+
+##### 缩进规则
+
+#### 代码片段：snippets
+
+代码片段，也叫`snippets`，相信大家都不陌生，就是输入一个很简单的单词然后一回车带出来很多代码。平时大家也可以直接在vscode中创建属于自己的`snippets`：
+
+```json
+"contributes": {
+    "snippets": [
+		{
+			// 代码片段作用于那种语言
+			"language": "javascript",
+			// 片段文件路径
+			"path": "./snippets/test.json"
+    	}
+	]
+}
+```
+
+比如创建一个for循环，输入for就快速生成代码片段
+
+```json
+//./snippets/test.json
+
+{
+    "for循环": {
+        "prefix": "for",
+        "body": [
+          "for (const ${2:item} of ${1:array}) {",
+          "\t$0",
+          "}"
+        ],
+        "description": "for循环"
+    }
+}
+
+
+for循环：snippets的名字；
+prefix：输入什么单词触发代码片段；
+body：一个数组，存放代码片段的内容，每一行一个字符串；
+description：片段的描述；
+${1:xxx}占位符，数字表示光标聚焦的顺序，1表示默认光标落在这里，按下回车或者tab跳到2的位置，以此类推，xxx表示此位置的默认值，可省略，比如直接写$3；$0最后一个聚焦的位置
+
+```
+
+```
+//为加深印象我们再来一个ajax的例子：
+{
+	"ajax": {
+        "prefix": "ajax",
+        "body": [
+            "$.ajax({",
+            "    url: '$1',",
+            "    method: '${2:POST}',",
+            "    datatype: 'json',",
+            "    success: data => {",
+            "        $3;",
+            "    },",
+            "    error: err => {",
+            "        $4;",
+            "    }",
+            "})"
+        ],
+        "description": "ajax模块"
+    }
+}
+
+```
+
+
+
+#### 语法高亮：grammars
+
+语法高亮决定源代码的颜色和样式，它主要负责关键字（如javascript中的`if`，`for`）、字符串、注释、变量名等等语法的着色工作。
+
+语法高亮由两部分工作组成：
+
+- [分词](#分词)：将文本分割为一系列符号（包括单词和标点）
+- [主题化](#主题化)：然后根据主题或用户设置，对符号进行着色添加样式
+
+
+
+### 打包发布
+
+插件开发完了，如何发布出去分享给他人呢？主要有3种方法：
+
+- 方法一：直接把文件夹发给别人，让别人找到vscode的插件存放目录并放进去，然后重启vscode，一般不推荐；
+- 方法二：打包成vsix插件，然后发送给别人安装，如果你的插件涉及机密不方便发布到应用市场，可以尝试采用这种方式；
+- 方法三：注册开发者账号，发布到官网应用市场，这个发布和npm一样是不需要审核的。
+
+无论是本地打包还是发布到应用市场都需要借助`vsce`这个工具。
+
+```cmd
+npm i vsce -g
+```
+
+**本地打包：**
+
+- 打包成`vsix`文件：
+
+    - ```
+        vsce package
+        ```
+
+- 打包的时候如果没有设置`repository`会有提示，所以最好设置一下。
+- 生成好的vsix文件不能直接拖入安装，只能从扩展的右上角选择`Install from VSIX`安装：
+
+**发布应用市场:**
+
+- 
 
 
 
