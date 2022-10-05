@@ -13,7 +13,7 @@ javascript:
 
 - 原生js开发：按照ECMAScript标准的开发方式，简称ES
 
-Typescript 微软的标准：
+Typescript ：微软的标准：
 
 js框架：
 
@@ -40,6 +40,107 @@ javascript构建工具
 大前端模式：
 
 - MVVM
+
+
+
+## JavaScript
+
+> https://zh.javascript.info/
+
+### 模块
+
+- `export` 关键字标记了可以从当前模块外部访问的变量和函数。
+- `import` 关键字允许从其他模块导入功能。
+
+**模块只通过 HTTP(s) 工作，而非本地**
+
+如果你尝试通过 `file://` 协议在本地打开一个网页，你会发现 `import/export` 指令不起作用。你可以使用本地 Web 服务器，例如 [static-server](https://www.npmjs.com/package/static-server#getting-started)，或者使用编辑器的“实时服务器”功能，例如 VS Code 的 [Live Server Extension](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) 来测试模块。
+
+换句话说，对于模块，我们使用导入/导出而不是依赖全局变量。
+
+如果同一个模块被导入到多个其他位置，那么它的代码只会执行一次，即在第一次被导入时。然后将其导出（export）的内容提供给进一步的导入（importer）。
+
+这里有一条规则：顶层模块代码应该用于初始化，创建模块特定的内部数据结构。如果我们需要多次调用某些东西 —— 我们应该将其以函数的形式导出，就像我们在上面使用 `sayHi` 那样。
+
+### 基础
+
+#### 变量：
+
+- let用来声明变量，以前我们是用var来声明变量的。
+
+- var和let的区别：
+
+    - 现代脚本中一般不再使用var。
+
+    - “var” 没有块级作用域
+
+        - 用 `var` 声明的变量，不是函数作用域就是全局作用域。它们在代码块外也是可见的（译注：也就是说，`var` 声明的变量只有函数作用域和全局作用域，没有块级作用域）。
+
+    - 举个例子：
+
+        ```javascript
+        if (true) {
+          var test = true; // 使用 "var" 而不是 "let"
+        }
+        
+        alert(test); // true，变量在 if 结束后仍存在
+        ```
+
+        由于 `var` 会忽略代码块，因此我们有了一个全局变量 `test`。
+
+        如果我们在第二行使用 `let test` 而不是 `var test`，那么该变量将仅在 `if` 内部可见：
+
+        ```javascript
+        if (true) {
+          let test = true; // 使用 "let"
+        }
+        
+        alert(test); // ReferenceError: test is not defined
+        ```
+
+        对于循环也是这样的，`var` 声明的变量没有块级作用域也没有循环局部作用域：
+
+        ```javascript
+        for (var i = 0; i < 10; i++) {
+          var one = 1;
+          // ...
+        }
+        
+        alert(i);   // 10，"i" 在循环结束后仍可见，它是一个全局变量
+        alert(one); // 1，"one" 在循环结束后仍可见，它是一个全局变量
+        ```
+
+        如果一个代码块位于函数内部，那么 `var` 声明的变量的作用域将为函数作用域：
+
+        ```javascript
+        function sayHi() {
+          if (true) {
+            var phrase = "Hello";
+          }
+        
+          alert(phrase); // 能正常工作
+        }
+        
+        sayHi();
+        alert(phrase); // ReferenceError: phrase is not defined
+        ```
+
+        可以看到，`var` 穿透了 `if`，`for` 和其它代码块。这是因为在早期的 JavaScript 中，块没有词法环境，而 `var` 就是这个时期的代表之一。
+
+    - **var 允许重新声明**
+
+    - **“var” 声明的变量，可以在其声明语句前被使用**
+
+        - 当函数开始的时候，就会处理 `var` 声明（脚本启动对应全局变量）。
+        - 换言之，`var` 声明的变量会在函数开头被定义，与它在代码中定义的位置无关（这里不考虑定义在嵌套函数中的情况）。
+
+#### 常量：`const`
+
+## TypeScript
+
+### tsconfig.json 简介
+
+> 了不起的 tsconfig.json 指南 - 王平安的文章 - 知乎 https://zhuanlan.zhihu.com/p/145210784
 
 
 
@@ -217,6 +318,17 @@ Yarn 是为了弥补 npm 的一些缺陷而出现的。
     npm install taco --save-dev === yarn add taco --dev
     npm update --save === yarn upgrade
     npm run serve   === yarn run serve
+    yarn安装全局包的命令是yarn global add 【包名】
+    
+    查看 yarn 全局包的可执行文件安装位置：yarn global bin
+    
+    查看 yarn 全局包的源文件安装位置：yarn global dir
+    
+    修改 yarn 全局包 bin 安装位置：yarn config set global-folder "你的磁盘路径"
+    
+    修改环境变量：export PATH=$PATH:【yarn 全局包 bin 安装位置】
+    
+    改变 yarn 缓存位置：yarn config set cache-folder "你的磁盘路径"
     ```
 
 #### yarn安装
@@ -465,6 +577,8 @@ src/main.js是渲染进程入口程序。
 > https://liiked.github.io/VS-Code-Extension-Doc-ZH/#/
 >
 > https://www.cnblogs.com/liuxianan/p/vscode-plugin-overview.html
+>
+> https://code.visualstudio.com/api 官方文档
 
 vscode是使用Electron技术。vscode插件可以使用TypeScript来编写（官方推荐），也可以使用JavaScript。
 
@@ -705,7 +819,7 @@ colors
 
 ### 语言插件
 
-
+> https://zhuanlan.zhihu.com/p/388801724
 
 #### 新语言支持：languages
 
@@ -805,7 +919,7 @@ colors
 ##### 代码折叠
 
 - 在VS Code中有三种代码折叠类型：
-- 缩进折叠：这是VS Code中默认的缩进行为，当两行内容有着相同的缩进级别时，你就可以看到折叠标记了。
+- **缩进折叠：这是VS Code中默认的缩进行为，当两行内容有着相同的缩进级别时，你就可以看到折叠标记了。**
 - 语言配置折叠：当VS Code发现`folding.markers`同时定义了`start`和`end`时，对应区域内就会出现折叠标记。下述配置会对`//#region`和`//#endregionJSON`区域创建代码折叠标记：
 
 ##### 单词匹配
@@ -890,7 +1004,355 @@ ${1:xxx}占位符，数字表示光标聚焦的顺序，1表示默认光标落�
 - [分词](#分词)：将文本分割为一系列符号（包括单词和标点）
 - [主题化](#主题化)：然后根据主题或用户设置，对符号进行着色添加样式
 
+### Language Server Protocol
 
+> 
+
+#### lsp介绍
+
+- LSP —— Language Server Protocol 本质上是一种基于 JSON-RPC 的进程间通讯协议，LSP 本身包含两大块内容：
+
+    - 定义 client 与 server 之间的通讯模型，也就是谁、在什么时候、以什么方式向对方发送什么格式的信息，接收方又以什么方式返回响应信息
+
+    - 定义通讯信息体，也就是以什么格式、什么字段、什么样的值表达信息状态
+
+- 作为类比，HTTP 协议专门用于描述网络节点间如何传输、理解超媒体文档的网络通讯协议；而 LSP 协议则专门用于描述 IDE 中，用户行为与响应之间的通讯方式与信息结构。
+
+- 总结一下，LSP 架构的工作流程如下：
+
+    - 编辑器如 VSCode 跟踪、计算、管理用户行为模型，在发生某些特定的行为序列时，以 LSP 协议规定的通讯方式向 Language Server 发送动作与上下文参数
+
+    - Language Server 根据这些参数异步地返回响应信息
+
+    - 编辑器再根据响应信息处理交互反馈
+
+- ![image-20221005100717643](./javascript.assets/image-20221005100717643.png)
+
+- 简单说，编辑器负责与用户直接交互， Language Server 负责在背后默默计算如何响应用户的交互动作，两者以进程粒度分离、解耦，在 LSP 协议框架下各司其职又协作共生。就好像我们通常开发的 Web 应用中，前端负责与用户交互，服务端负责管理诸如权限、业务数据、业务状态流转等不可见的部分。
+- 目前，LSP 协议已经发展到 3.16 版本，覆盖大多数语言特性，包括：
+    - 代码补全
+    - 代码高亮
+    - 定义跳转
+    - 类型推断
+    - 错误检测
+    - 等等
+- **得益于 LSP 清晰的设计，这些语言特性的开发套路都很相似，学习曲线很平滑，开发的时候基本上只需要关心监听那个函数，返回什么格式的结构，可以说掌握几个示例之后就可以很简单地上手了。**
+- 过去，IDE 对语言特性的支持是集成在 IDE 或者以同构插件形式实现的，在 VSCode 中这种同构扩展能力以 **「Language API」** 或 **「Sematic Tokens Provider」** 接口方式提供，这两种方式在上一篇文章《[你不知道的 VSCode 代码高亮原理](https://link.zhihu.com/?target=https%3A//mp.weixin.qq.com/s/4TNh0sTyT49Flxs2sdr0uw)》都有过介绍了，虽然架构上比较简单，容易理解，但有一些明显硬伤：
+    - 插件开发者必须复用 VSCode 本身的开发语言、环境，例如 Python 语言插件就必须用 JavaScript 写
+    - 同一个编程语言需要为不同 IDE 重复开发相似的扩展插件，重复投入
+- ![image-20221005100824245](./javascript.assets/image-20221005100824245.png)
+
+- LSP 最大的优势就是将 IDE 客户端与实际计算交互特性的服务端隔离开来，同一个 Language Service 可以重复应用在多个不同 Language Client 中。
+- 此外，LSP 协议下客户端、服务器分别在各自进程运行，在性能上也会有正向收益：
+    - 确保 UI 进程不卡顿
+    - Node 环境下，充分利用多核 CPU 能力
+    - 由于不再限定 Language Server 的技术栈，开发者可以选择更高性能的语言，例如 Go
+
+- 总的来说，就是很强。
+
+如果你选择使用 TS 编写 LSP，事情会变得更简单。`vscode-languageserver` 包提供了非常完善的 Typescript 类型定义，我们完全可以借助 ts + VSCode 的代码提示找到需要使用的监听函数，和函数的类型，返回值，说明。
+
+LSP 稍微有一点点复杂，建议读者先拉下 vscode 官方示例对比学习：
+
+```
+git clone https://github.com/microsoft/vscode-extension-samples.git
+cd vscode-extension-samples/lsp-sample
+yarn
+yarn compile
+code .
+```
+
+vscode-extension-samples/lsp-sample 的主要代码文件有：
+
+```
+.
+├── client // Language Client
+│   ├── src
+│   │   └── extension.ts // Language Client 入口文件
+├── package.json 
+└── server // Language Server
+    └── src
+        └── server.ts // Language Server 入口文件
+```
+
+样例代码中有几个关键点：
+
+1. `server/src/server.ts`：LSP 服务端代码，提供代码补全、错误诊断、代码提示等常见语言功能的示例
+2. `client/src/extension.ts`：提供一系列 LSP 参数，包括 Server 的调试端口、代码入口、通讯方式等。
+
+3. `packages.json`：主要提供了语法插件所需要的配置信息，包括：
+
+4. - `activationEvents`： 声明插件的激活条件，代码中的 `onLanguage:plaintext` 意为打开 txt 文本文件时激活
+    - `main`： 插件的入口文件
+
+逻辑上，vscode 会在加载插件时根据 `package.json` 的配置判断激活条件，之后加载、运行插件入口，启动 LSP 服务器。插件启动后，后续用户在 vscode 的交互行为会以标准事件，如 hover、completion、signature help 等方式触发插件的 client ，client 再按照 LSP 协议转发到 server 层。
+
+其中，`client/src/extension.ts` 与 `packages.json` 都比较简单，本文过多介绍，重点在于 `server/src/server.ts` 文件，接下来我们逐步拆解，解析不同语言特性的实现细节。
+
+#### 入口配置
+
+示例 vscode-extension-samples/lsp-sample 中的 `package.json` 有两个关键配置：
+
+```json
+{
+    "activationEvents": [
+        "onLanguage:plaintext"
+    ],
+    "main": "./client/out/extension",
+}
+```
+
+其中：
+
+- `activationEvents`：声明插件的激活条件，代码中的 `onLanguage:plaintext` 意为打开 txt 文本文件时激活
+- `main`：插件的入口文件
+
+#### Client 样例
+
+- 示例 vscode-extension-samples/lsp-sample 中的 Client 入口代码，关键部分如下：
+
+    ```typescript
+    export function activate(context: ExtensionContext) {
+        // Server 配置信息
+        const serverOptions: ServerOptions = {
+            run: { 
+                // Server 模块的入口文件
+                module: context.asAbsolutePath(
+                    path.join('server', 'out', 'server.js')
+                ), 
+                // 通讯协议，支持 stdio、ipc、pipe、socket
+                transport: TransportKind.ipc 
+            },
+        };
+    
+        // Client 配置
+        const clientOptions: LanguageClientOptions = {
+            // 与 packages.json 文件的 activationEvents 类似
+            // 插件的激活条件
+            documentSelector: [{ scheme: 'file', language: 'plaintext' }],
+            // ...
+        };
+    
+        // 使用 Server、Client 配置创建代理对象
+        const client = new LanguageClient(
+            'languageServerExample',
+            'Language Server Example',
+            serverOptions,
+            clientOptions
+        );
+    
+        client.start();
+    }
+    ```
+
+    代码脉络很清晰，先是定义 Server、Client 配置对象，之后创建并启动了 `LanguageClient` 实例。从实例可以看到，Client 这一层可以做的很薄，在 Node 环境下大部分转发逻辑都被封装在 `LanguageClient` 类中，开发者无需关心细节。
+
+
+
+#### Server 样例
+
+示例 vscode-extension-samples/lsp-sample 中的 Server 代码实现了错误诊断、代码补全功能，作为学习样例来说稍显复杂。
+
+LSP 客户端服务器之间的通讯过程都已经封装在 `LanguageClient` 、`connection` 等对象中，插件开发者并不需要关心底层实现细节，也不需要深入理解 LSP 协议即可基于这些对象暴露的接口、事件等实现简单的代码高亮效果。
+
+```typescript
+// 要素1： 初始化 LSP 连接对象
+const connection = createConnection(ProposedFeatures.all);
+
+// 要素2： 创建文档集合对象，用于映射到客户端正在编辑的文件
+const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
+
+connection.onInitialize((params: InitializeParams) => {
+  // 要素3： 显式声明插件支持的语言特性
+  const result: InitializeResult = {
+    capabilities: {
+      hoverProvider: true
+    },
+  };
+  return result;
+});
+
+// 要素4： 将文档集合对象关联到连接对象
+documents.listen(connection);
+
+// 要素5： 开始监听连接对象
+connection.listen();
+```
+
+从示例代码可以总结出 Language Server 的 5 个必要步骤：
+
+- 创建 `connection` 对象，用于实现客户端与服务器之间的信息互通
+- 创建 `documents` 文档集合对象，用于映射客户端正在编辑的文件
+- 在 `connection.onInitialize` 事件中，显式声明插件支持的语法特性，例如上例中返回对象包含 `hoverProvider: true` 声明，表示该插件能够提供代码悬停提示功能
+- 将 `documents` 关联到 `connection` 对象
+- 调用 `connection.listen` 函数，开始监听客户端消息
+
+上述 `connection` 、`documents` 等对象定义在 npm 包：
+
+- `vscode-languageserver/node`
+- `vscode-languageserver-textdocument`
+
+这是一个基本模板，主要完成了 Language Server 各种初始化操作，后续就可以使用 `connection.onXXX` 或 `documents.onXXX` 监听各类交互事件，并在事件回调中返回符合 LSP 协议的结果，或者显式调用通讯函数如 `connection.sendDiagnostics` 发送交互信息。
+
+接下来我们通过几个简单实例，分析各项语言特性的实现逻辑。
+
+##### 悬停提示
+
+- 当鼠标停留在语言元素如函数、变量、符号等 token 时，VSCode 会显示 token 对应描述与帮助信息：
+
+- 要实现悬停提示功能，首先需要声明插件支持 `hoverProvider` 特性：
+
+    ```text
+    connection.onInitialize((params: InitializeParams) => {
+      return {
+        capabilities: {
+          hoverProvider: true
+        },
+      };
+    });
+    ```
+
+    之后，需要监听 `connection.onHover` 事件，并在事件回调中返回提示信息：
+
+    ```text
+    connection.onHover((params: HoverParams): Promise<Hover> => {
+      return Promise.resolve({
+        contents: ["Hover Demo"],
+      });
+    });
+    ```
+
+    OK，这就是一个很简单的语言特性示例了，本质上就是监听事件 + 返回结果，非常简单。
+
+##### 代码格式化
+
+- 代码格式化是一个特别有用的功能，能够帮助用户快速、自动完成代码的美化处理，实现效果如：
+
+- 实现代码格式化功能，首先需要声明插件支持 `documentFormattingProvider` 特性：
+
+    ```text
+    {
+        ...
+        capabilities : {
+            documentFormattingProvider: true
+            ...
+        }
+    }
+    ```
+
+    之后，监听 `onDocumentFormatting` 事件：
+
+    ```text
+    connection.onDocumentFormatting(
+      (params: DocumentFormattingParams): Promise<TextEdit[]> => {
+        const { textDocument } = params;
+        const doc = documents.get(textDocument.uri)!;
+        const text = doc.getText();
+        const pattern = /\b[A-Z]{3,}\b/g;
+        let match;
+        const res = [];
+        // 查找连续大写字符串
+        while ((match = pattern.exec(text))) {
+          res.push({
+            range: {
+              start: doc.positionAt(match.index),
+              end: doc.positionAt(match.index + match[0].length),
+            },
+            // 将大写字符串替换为 驼峰风格
+            newText: match[0].replace(/(?<=[A-Z])[A-Z]+/, (r) => r.toLowerCase()),
+          });
+        }
+    
+        return Promise.resolve(res);
+      }
+    );
+    ```
+
+    示例代码中，回调函数主要实现将连续大写字符串格式化为驼峰字符串，
+
+##### 函数签名
+
+- 函数签名特性在用户输入函数调用语法时触发，此时 VSCode 会根据 Language Server 返回的内容，显示该函数的帮助信息。
+
+- 实现函数签名功能，需要首先声明插件支持 `documentFormattingProvider` 特性：
+
+    ```text
+    {
+        ...
+        capabilities : {
+            signatureHelpProvider: {
+                triggerCharacters: ["("],
+            }
+            ...
+        }
+    }
+    ```
+
+    之后，监听 `onSignatureHelp` 事件：
+
+    ```text
+    connection.onSignatureHelp(
+      (params: SignatureHelpParams): Promise<SignatureHelp> => {
+        return Promise.resolve({
+          signatures: [
+            {
+              label: "Signature Demo",
+              documentation: "帮助文档",
+              parameters: [
+                {
+                  label: "@p1 first param",
+                  documentation: "参数说明",
+                },
+              ],
+            },
+          ],
+          activeSignature: 0,
+          activeParameter: 0,
+        });
+      }
+    );
+    ```
+
+##### 错误提示
+
+注意，错误提示的实现逻辑与上述事件 + 响应的模式有一点点不同：
+
+- 首先不需要通过`capabilities` 做额外声明；
+- 监听的是 `documents.onDidChangeContent` 事件，而不是 `connection` 对象上的事件
+- 不是在事件回调中用 `return` 语句返回错误信息，而是调用 `connection.sendDiagnostics` 发送错误消息
+
+```text
+// 增量错误诊断
+documents.onDidChangeContent((change) => {
+  const textDocument = change.document;
+
+  // The validator creates diagnostics for all uppercase words length 2 and more
+  const text = textDocument.getText();
+  const pattern = /\b[A-Z]{2,}\b/g;
+  let m: RegExpExecArray | null;
+
+  let problems = 0;
+  const diagnostics: Diagnostic[] = [];
+  while ((m = pattern.exec(text))) {
+    problems++;
+    const diagnostic: Diagnostic = {
+      severity: DiagnosticSeverity.Warning,
+      range: {
+        start: textDocument.positionAt(m.index),
+        end: textDocument.positionAt(m.index + m[0].length),
+      },
+      message: `${m[0]} is all uppercase.`,
+      source: "Diagnostics Demo",
+    };
+    diagnostics.push(diagnostic);
+  }
+
+  // Send the computed diagnostics to VSCode.
+  connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
+});
+```
+
+这段逻辑诊断代码中是否存在连续大写字符串，通过 `sendDiagnostics` 发送相应的错误信息
 
 ### 打包发布
 

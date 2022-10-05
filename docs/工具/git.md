@@ -66,8 +66,8 @@
 通过git命令，全局配置本地的用户名以及邮箱（用于后续push到远程仓库时留下记号，这样远程仓库可以得知某人在何时所提交的内容，其次远程仓库并不会验证用户名以及邮箱，只是强烈建议修改成自身github的用户名以及github注册的邮箱，是因为git是注重历史的，可以得知这个项目的贡献者，或者排查出bug出现在何次提交）
 
 ```
-$ git config --global user.name "your_github_name"
-$ git config --global user.email  "your_email"
+git config --global user.name "your_github_name"
+git config --global user.email  "your_email"
 ```
 
 **第二步**
