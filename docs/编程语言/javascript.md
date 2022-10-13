@@ -817,6 +817,8 @@ taskDefinitions
 colors
 ```
 
+### 调试插件
+
 ### 语言插件
 
 > https://zhuanlan.zhihu.com/p/388801724
@@ -851,7 +853,7 @@ colors
 
 ##### 启用/关闭注释
 
-- VS Code提供了切换注释开关的命令：
+- VS Code提供了切换注释的命令：
 
     - **Toggle Line Comment**
     - **Toggle Block Comment**
@@ -871,7 +873,7 @@ colors
 
 - 你在VS Code中将鼠标移动到一个括号边上时，VS Code会自动高亮对应的括号。
 
-- ```json
+    ```json
     {
     	"brackets": [["{", "}"], ["[", "]"], ["(", ")"]]
     }
