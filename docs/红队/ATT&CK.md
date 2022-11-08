@@ -109,13 +109,5 @@ GameBoard游戏榜插件用于在演习中监控红队和蓝队的作战情况�
 
 蓝队也是给个agent，然后通过agent执行战术，比如做应急响应。
 
-## 设置红队攻防靶场
-
-## 自动化情报收集工具
-
-### Spiderfoot
-
-https://github.com/smicallef/spiderfoot
-
 
 

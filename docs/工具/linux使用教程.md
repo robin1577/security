@@ -1,6 +1,160 @@
 # Linux使用教程
 
-## Linux简介
+## 虚拟机
+
+### 0x01 什么是虚拟机软件？
+
+1. 我们学过汇编语言，汇编语言可以看作是可读的机器指令，通过硬件来执行这些机器指令。我们所有的程序最终都会变成一条一条的机器指令然后硬件执行。
+2. 操作系统也是一个软件，和我们平时写的c语言程序没什么区别，它最后也是变成机器指令一条一条执行。
+3. 虚拟机软件通过宿主电脑的操作系统提供的api（应用程序接口）来模拟硬件环境（模拟出来cpu，内存，硬盘，汇编语言这些），内存和硬盘可以用一个c结构体来模拟，汇编指令也可以编写对应的c语言语句就行。可以根据硬件的cpu处理数据代码的逻辑，模拟出一个cpu。
+4. 除了模拟硬件环境，还会模拟一个BIOS（Basic Input Output System）。像正常我们在主机上装系统时，是由BIOS读入操作系统，然后将cpu的执行转向操作系统。BIOS是电脑主板自带的。
+5. **由虚拟机软件提供了虚拟硬件环境并安装了操作系统的环境叫做虚拟机。**
+
+### 0x02 有哪些流行的虚拟机软件 
+
+1. VMware Workstation（最好用的，收费），Virtual Box（开源），hyper（微软出品），wsl2(Windows Subsystem for Linux 微软出品)。
+
+### 0x03 Vmware使用教程
+
+1. 安装kali系统
+
+    - 有两种办法
+    - 下载iso镜像，然后自己用vmware安装操作系统。这样会生成虚拟机文件，用vmware打开就行。
+    - 同理我们也可以直接下载由kali官方提供的已经安装完操作系统的文件。进入网址<https://www.kali.org/get-kali/#kali-virtual-machines>，直接下载配置好的镜像。下载好压缩包之后直接解压，打开镜像文件，用户名和密码都是**kali**。这种就不需要自己安装操作系统了。
+
+2. 虚拟机硬件参数配置
+
+    - ![](./linux使用教程.assets/vmware_nat.jpg)
+    - 配置好内存，cpu，网络适配器选项。
+    - 仅主机模式，nat，桥接的区别？  
+        1. nat：这时候windows就相当于变成了一个路由器，虚拟机和windows复用windows的外网。（默认用这个，这样虚拟机可以连外网）  
+        2. 桥接：就相当于多了一个网卡给虚拟机用，而且虚拟机和windows网卡是同级别的，他们会由外部的路由器分配到同一个网段，如果是连wifi，虚拟机和window时一样操作，打开wifi输入密码连接。  
+        3. 仅主机模式：虚拟机无法通外网，虚拟机和windows构建了一个子网，只能虚拟机和windows之间访问。
+
+3. kali更换下载源  
+
+    * 官方下载源在下载软件时比较慢，因此需要更换成国内源（阿里云、华为等）
+
+    * 使用root，进入/etc/apt文件夹下
+
+    * 通过ls命令可以看到sources.list文件，使用vim打开，注释官方源（在改行最前面添加#即可），添加如下代码
+
+        ```
+        #阿里云
+        deb http://mirrors.aliyun.com/kali kali-rolling main non-free contrib
+        deb-src http://mirrors.aliyun.com/kali kali-rolling main non-free contrib
+        #中科大
+        deb http://mirrors.ustc.edu.cn/kali kali-rolling main non-free contrib
+        deb-src http://mirrors.ustc.edu.cn/kali kali-rolling main non-free contrib
+        ```
+
+    * 更新系统，执行以下命令
+
+        ```
+        apt-get update
+        apt-get upgrade
+        apt-get dist-upgrade
+        ```
+
+    * 重启系统（`reboot`）
+
+### 0x04 wsl2使用教程
+
+1. wsl2相较于VMware有什么优缺点？  
+    wsl2是一个轻量级的虚拟机，wsl2像是和windows融为一体了。我们可以打开一个linux软件像打开一个window程序一样呈现在windows下。
+2. 如下图，我在windows中调用了kali的leafpad软件，直接显示在windows上了。
+    ![](./linux使用教程.assets/wsl2_1.jpg)
+3. wsl1和wsl2的区别？  
+    wsl2是由hyper虚拟机软件提供服务的，然后做了一些定制化，本身是虚拟机软件。而wsl1是做指令翻译，将linux可执行文件翻译成windows可执行文件，并没有做虚拟化内存，硬盘之类的。
+4. 安装wsl2
+    https://blog.csdn.net/weixin_39902608/article/details/111229132
+
+### 0x05 docker的使用
+
+> docker并不是一个虚拟机软件，他只是一个容器，而且只能在linux下运行。在一个linux操作系统中，我们可以利用docker来生成多个隔离的linux环境。
+
+- docker上有很多配置好的靶机环境，我们可以使用别人的环境来进行测试，这样就不用自己搭建环境了。
+
+- linux安装docker：
+
+    - 登录系统，切换到root权限，安装docker（`apt-get install docker.io`）
+    - 通过执行docker命令，观察是否安装成功。若安装成功，会提示若干docker命令
+
+- windows安装docker：
+
+- 换源：在配置文件中"registry-mirrors"的值添加国内源就行
+
+    - 在windows下，docker使用的是wsl2或者hyper的linux环境，有图形化界面。
+
+    - linux需要自己配置
+
+- 找寻并下载靶机images：
+
+    - 在库中搜索镜像： `docker search  imagename`
+
+        - 比如搜索sqli-labs这个靶机。`docker search sqli-labs`
+
+        - 然后会出现多个用户上传的靶机。选择一个STARTS高的就行。
+
+            ```shell
+            C:\Users\15775>docker search sqli-labs
+            NAME                   DESCRIPTION                      				STARS  
+            
+            acgpiano/sqli-labs     sql injection labs                              	  28
+            
+            c0ny1/sqli-labs        sqli-labs是一个sql注入的练习靶机，项目地址为…           7
+            
+            sari3l/sqli-labs-safedog   Base: sqli-labs & safedog(version Linux64_2.…   2
+            
+            0bajie0/sqli-labs                                                          1
+            
+            promiseit/sqli-labs                                                        1
+            
+            ```
+
+    - 在库中下载镜像：`docker pull   NAME`
+
+        - 比如下载 `docker pull   acgpiano/slqi-labs`
+
+- 镜像是我们下载下来的文件，通过镜像可以生成隔离的linux环境——容器，一旦容器生成成功，容器和镜像就没有关系了。容器是容器，镜像是镜像。
+
+- 启动images产生一个容器Containers：
+
+    - `docker run path/imagename`
+        - -d 后台运行
+        - -i 交互式操作
+        - -t 终端
+        - --name 容器别名
+        - -p localport:靶机port
+    - 例如：`docker run -dt --name slqi-labs -p 8080:80  acgpiano/sqli-labs`
+        - **-p 8080:80**则是将靶机的80端口映射到主机的8080端口。这样我们访问http://localhost:8080就能访问到靶机了。
+    - windows下，图形化界面生成容器，启动靶机。
+        - ![image-20211204124455133](linux使用教程.assets/image-20211204124455133.png)
+
+- 启动完成后就可以在浏览器打开http://localhost:8080则能访问slqi-labs中的内容
+
+- 其他docker命令：
+
+    ```shell
+    docker ps  							#查看当前正在运行的容器，有容器的id值
+    docker ps -a 						#查看所有容器信息
+    docker images						#列出本地镜像
+    docker exec -it 容器id /bin.bash     #执行容器
+    
+    docker stop 容器名称/容器ID 			#停止该容器
+    docker stop $(docker ps -q)			#停止全部运行中的容器
+    
+    docker start 容器名称/ID			 #启动该容器
+    docker restart 容器名称				 #重启该容器
+    
+    docker rm 容器名称/容器ID			   #删除容器
+    docker rmi 镜像名称					#删除镜像
+    docker rm $(docker ps -aq)         #删除全部容器
+    ```
+
+    
+
+## Linux基础
 
 1. Linux 内核最初只是由芬兰人林纳斯·托瓦兹（Linus Torvalds）在赫尔辛基大学上学时出于个人爱好而编写的。
 
@@ -23,7 +177,7 @@
 | 学习     | 系统构造复杂、变化频繁，且知识、技能淘汰快，深入学习困难。   | 系统构造简单、稳定，且知识、技能传承性好，深入学习相对容易。 |
 | 软件     | 每一种特定功能可能都需要商业软件的支持，需要购买相应的授权。 | 大部分软件都可以自由获取，同样功能的软件选择较少。           |
 
-## Linux安装
+### Linux安装
 
 Ubuntu是世界上最流行的Linux发行版。
 
@@ -191,7 +345,7 @@ cd /home/dxj/vmware-tools-distrib
 
 （8）安装完VMware Tools之后，重新启动该系统，单击全屏按钮，即可全屏。
 
-## Linux系统目录
+### Linux系统目录
 
 登录系统后，在终端命令窗口下输入命令：
 
@@ -263,7 +417,9 @@ ls /
 
 - **/srv**：存放服务启动后需要提取的数据**（不用服务器就是空）**
 
-## vim编辑器
+## linux常用软件/命令
+
+### vim编辑器
 
 **什么是vim？**
 
@@ -275,11 +431,11 @@ Vim 是从 vi 发展出来的一个文本编辑器。代码补全、编译及错
 ![img](linux使用教程.assets/vi-vim-cheat-sheet-sch.gif)
 
 
-### **vim的使用**
+#### **vim的使用**
 
 基本上 vi/vim 共分为三种模式，分别是**命令模式（Command mode）**，**输入模式（Insert mode）**和**底线命令模式（Last line mode）**。
 
-#### 命令模式：
+##### 命令模式：
 
 用户刚刚启动 vi/vim，便进入了命令模式。
 
@@ -291,7 +447,7 @@ Vim 是从 vi 发展出来的一个文本编辑器。代码补全、编译及错
 - **x** 删除当前光标所在处的字符。
 - **:** 切换到底线命令模式，以在最底一行输入命令。
 
-#### 输入模式
+##### 输入模式
 
 在命令模式下按下i就进入了输入模式。
 
@@ -307,7 +463,7 @@ Vim 是从 vi 发展出来的一个文本编辑器。代码补全、编译及错
 - **Insert**，切换光标为输入/替换模式，光标将变成竖线/下划线
 - **ESC**，退出输入模式，切换到命令模式
 
-#### 底线命令模式
+##### 底线命令模式
 
 在命令模式下按下:（英文冒号）就进入了底线命令模式。
 
@@ -319,12 +475,12 @@ Vim 是从 vi 发展出来的一个文本编辑器。代码补全、编译及错
 - w 保存文件
 - 按ESC键可随时退出底线命令模式。
 
-### vim工作模式
+#### vim工作模式
 
 ![img](linux使用教程.assets/vim-vi-workmodel.png)
 
 
-## yum命令
+### yum命令
 
 **什么是yum命令？**
 
@@ -334,7 +490,7 @@ yum（ Yellow dog Updater, Modified）是一个在 Fedora 和 RedHat 以及 SUSE
 
 yum 提供了查找、安装、删除某一个、一组甚至全部软件包的命令，而且命令简洁而又好记。
 
-### yum语法
+#### yum语法
 
 ```
 yum [options] [command] [package ...]
@@ -344,7 +500,7 @@ yum [options] [command] [package ...]
 - **command：**要进行的操作。
 - **package：**安装的包名。
 
-### yum常用命令
+#### yum常用命令
 
 -  列出所有可更新的软件清单命令
 
@@ -414,16 +570,15 @@ yum search <keyword>
   yum clean, yum clean all (= yum clean packages; yum clean oldheaders)
   ```
 
-## apt命令
+### apt命令
 
-**什么是apt命令？**
+#### **什么是apt命令？**
 
 - apt（Advanced Packaging Tool）是一个在 Debian 和 Ubuntu 中的 Shell 前端软件包管理器。
 
 - apt 命令提供了查找、安装、升级、删除某一个、一组甚至全部软件包的命令，而且命令简洁而又好记。
 
 - apt 命令执行需要超级管理员权限(root)。
-
 
 #### apt语法
 
@@ -533,7 +688,7 @@ apt [options] [command] [package ...]
 
 
 
-## linux常用命令
+### linux常用命令
 
 | **命令连接**                                                 |                                                              |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -599,57 +754,7 @@ apt [options] [command] [package ...]
 | netstat                                                      | 是一个监控TCP/IP网络的非常有用的工具，它可以显示路由表、实际的网络连接以及每一个网络接口设备的状态信息。Netstat用于显示与IP、TCP、UDP和ICMP协议相关的统计数据，一般用于检验本机各端口的网络连接情况。  -a (all)  显示所有选项，默认不显示LISTEN相关。  -p  显示建立相关链接的程序名  -n  拒绝显示别名，能显示数字的全部转化成数字。  -t (tcp)  仅显示tcp相关选项。  -u (udp)  仅显示udp相关选项。 |
 | ss                                                           | 查看网络状态。                                               |
 
-
-
-## linux下用户/组/权限
-
-# searchsploit
-
-- searchsploit -u *#更新漏洞数据库*
-
-- searchsploit -h *#查看使用帮助*
-
-- | -c, --case [Term]         | 区分大小写(默认不区分大小写)                                 |
-    | ------------------------- | ------------------------------------------------------------ |
-    | -e, --exact [Term]        | 对exploit标题进行EXACT匹配 (默认为       AND) [Implies "-t"]. |
-    | -j, --json [Term]         | 以JSON格式显示结果                                           |
-    | **-m, --mirror [EDB-ID]** | **把一个****对应****id****的****exp拷贝到当前工作目录,参数后加目标id** |
-    | -o, --overflow [Term]     | Exploit标题被允许溢出其列                                    |
-    | -p, --path [EDB-ID]       | 显示漏洞利用的完整路径（如果可能，还将路径复制到剪贴板），后面跟漏洞ID号 |
-    | **-t, --title [Term]**    | **仅仅搜索漏洞标题（默认是标题和文件的路径）**               |
-    | -u, --update              | 检查并安装任何exploitdb软件包更新（deb或git）                |
-    | -w, --www [Term]          | 显示Exploit-DB.com的URL而不是本地路径（在线搜索）            |
-    | -x, --examine [EDB-ID]    | 使用$ PAGER检查（副本）Exp                                   |
-    | --colour                  | 搜索结果不高亮显示关键词                                     |
-    | --id                      | 显示EDB-ID                                                   |
-    | --nmap [file.xml]         | 使用服务版本检查Nmap       XML输出中的所有结果（例如：nmap -sV -oX file.xml） |
-    | 使用“-v”                  | （详细）来尝试更多的组合                                     |
-    | --exclude="term"          | 从结果中删除值。通过使用“\|”分隔多个值                 例如--exclude=“term1 \| term2 \| term3”。 |
-
-- **searchsploit的使用：**
-
-    - **查找对应名称漏洞：**
-        - **searchsploit ms17-010**
-            - 但是这样的缺点就是我们得去相应的漏洞目录下复制exp，下面这个方法比较简单
-            - searchsploit ms17-010 --id        #结果显示exp的ID，而不显示路径
-            - searchsploit -m 41891 42031       #复制知道ID的exp到当前目录下，多个ID用空格隔开
-    - **基本搜索：**
-        - searchsploit      smb windows remote
-    - **标题搜索**
-        - searchsploit -t smb windows remote
-
-    - **删除不想要的结果**
-
-        - 使用 --exclude= 选项删除不想要的结果
-
-        - searchsploit smb windows remote --exclude="(POC)|txt"
-
-        - searchsploit smb windows remote | grep rb #只显示rb文件
-
-
-- **联网搜索**：searchsploit eternalblue -w
-
-## gcc
+### gcc
 
 | -m32/-m64                 | 就能将程序编译为32/64位的了                                  |
 | ------------------------- | ------------------------------------------------------------ |
@@ -663,7 +768,7 @@ apt [options] [command] [package ...]
 | **--fno-stack-protector** | 开启栈保护，canary                                           |
 | **-****mavx2**            | 生成AVX2代码                                                 |
 
-## gdb
+### gdb
 
 1. objdump -d 反汇编二进制文件
 2. gdb test  -q：简约启动，关闭进入的提示信息
@@ -712,9 +817,57 @@ file test 调试test文件（用了gdb test就不用这个命令）
 | info  register              | 查看寄存器信息                                               |
 | help                        |                                                              |
 
-# Shell 教程
+## linux下用户/组/权限
 
-**什么是shell？**
+## searchsploit
+
+- searchsploit -u *#更新漏洞数据库*
+
+- searchsploit -h *#查看使用帮助*
+
+- | -c, --case [Term]         | 区分大小写(默认不区分大小写)                                 |
+    | ------------------------- | ------------------------------------------------------------ |
+    | -e, --exact [Term]        | 对exploit标题进行EXACT匹配 (默认为       AND) [Implies "-t"]. |
+    | -j, --json [Term]         | 以JSON格式显示结果                                           |
+    | **-m, --mirror [EDB-ID]** | **把一个****对应****id****的****exp拷贝到当前工作目录,参数后加目标id** |
+    | -o, --overflow [Term]     | Exploit标题被允许溢出其列                                    |
+    | -p, --path [EDB-ID]       | 显示漏洞利用的完整路径（如果可能，还将路径复制到剪贴板），后面跟漏洞ID号 |
+    | **-t, --title [Term]**    | **仅仅搜索漏洞标题（默认是标题和文件的路径）**               |
+    | -u, --update              | 检查并安装任何exploitdb软件包更新（deb或git）                |
+    | -w, --www [Term]          | 显示Exploit-DB.com的URL而不是本地路径（在线搜索）            |
+    | -x, --examine [EDB-ID]    | 使用$ PAGER检查（副本）Exp                                   |
+    | --colour                  | 搜索结果不高亮显示关键词                                     |
+    | --id                      | 显示EDB-ID                                                   |
+    | --nmap [file.xml]         | 使用服务版本检查Nmap       XML输出中的所有结果（例如：nmap -sV -oX file.xml） |
+    | 使用“-v”                  | （详细）来尝试更多的组合                                     |
+    | --exclude="term"          | 从结果中删除值。通过使用“\|”分隔多个值                 例如--exclude=“term1 \| term2 \| term3”。 |
+
+- **searchsploit的使用：**
+
+    - **查找对应名称漏洞：**
+        - **searchsploit ms17-010**
+            - 但是这样的缺点就是我们得去相应的漏洞目录下复制exp，下面这个方法比较简单
+            - searchsploit ms17-010 --id        #结果显示exp的ID，而不显示路径
+            - searchsploit -m 41891 42031       #复制知道ID的exp到当前目录下，多个ID用空格隔开
+    - **基本搜索：**
+        - searchsploit      smb windows remote
+    - **标题搜索**
+        - searchsploit -t smb windows remote
+
+    - **删除不想要的结果**
+
+        - 使用 --exclude= 选项删除不想要的结果
+
+        - searchsploit smb windows remote --exclude="(POC)|txt"
+
+        - searchsploit smb windows remote | grep rb #只显示rb文件
+
+
+- **联网搜索**：searchsploit eternalblue -w
+
+## Shell 教程
+
+### **什么是shell？**
 
 - Shell 是一个用 C 语言编写的程序，它是用户使用 Linux 的桥梁。Shell 既是一种命令语言，又是一种程序设计语言。
 
@@ -770,7 +923,7 @@ chmod +x ./test.sh  #使脚本具有执行权限
 /bin/php test.php
 ```
 
-## shell变量
+### shell变量
 
 **变量类型**
 
@@ -863,7 +1016,7 @@ unset variable_name
 
 变量被删除后不能再次使用。unset 命令不能删除只读变量。
 
-## shell字符串
+### shell字符串
 
 字符串是shell编程中最常用最有用的数据类型，字符串可以用单引号，也可以用双引号，也可以不用引号。
 
@@ -930,13 +1083,13 @@ echo `expr index "$string" io`  # 输出 4
 
 **注意：** 以上脚本中 **`** 是反引号，而不是单引号 **'**，不要看错了哦。
 
-## Shell 数组
+### Shell 数组
 
 bash支持一维数组（不支持多维数组），并且没有限定数组的大小。
 
 类似于 C 语言，数组元素的下标由 0 开始编号。获取数组中的元素要利用下标，下标可以是整数或算术表达式，其值应大于或等于 0。
 
-### 定义数组
+#### 定义数组
 
 在 Shell 中，用括号来表示数组，数组元素用"空格"符号分割开。定义数组的一般形式为：
 
@@ -948,7 +1101,7 @@ bash支持一维数组（不支持多维数组），并且没有限定数组的�
 
 也可以不使用连续的下标，而且下标的范围没有限制。
 
-### 读取数组
+#### 读取数组
 
 读取数组元素值的一般格式是：
 
@@ -968,7 +1121,7 @@ valuen=${array_name[n]}
 echo ${array_name[@]}
 ```
 
-### 获取数组的长度
+#### 获取数组的长度
 
 获取数组长度的方法与获取字符串长度的方法相同，例如：
 
@@ -981,7 +1134,7 @@ length=${#array_name[*]}
 lengthn=${#array_name[n]}
 ```
 
-## Shell 注释
+### Shell 注释
 
 以 **#** 开头的行就是注释，会被解释器忽略。
 
@@ -1003,7 +1156,7 @@ lengthn=${#array_name[n]}
 
 如果在开发过程中，遇到大段的代码需要临时注释起来，每一行加个#符号太费力了，可以把这一段要注释的代码用一对花括号括起来，**定义成一个函数**，没有地方调用这个函数，这块代码就不会执行，达到了和注释一样的效果。
 
-### 多行注释
+#### 多行注释
 
 多行注释还可以使用以下格式：
 
@@ -1031,7 +1184,7 @@ EOF 也可以使用其他符号:
 !
 ```
 
-## Shell 传递参数
+### Shell 传递参数
 
 我们可以在执行 Shell 脚本时，向脚本传递参数，脚本内获取参数的格式为：**$n**。**n** 代表一个数字，1 为执行脚本的第一个参数，2 为执行脚本的第二个参数，以此类推……
 
@@ -1122,7 +1275,7 @@ $ ./test.sh 1 2 3
 3
 ```
 
-## Shell 数组
+### Shell 数组
 
 数组中可以存放多个值。Bash Shell 只支持一维数组（不支持多维数组），初始化时不需要定义数组大小（与 PHP 类似）。
 
@@ -1150,7 +1303,7 @@ array_name[1]=value1
 array_name[2]=value2
 ```
 
-### 读取数组
+#### 读取数组
 
 读取数组元素值的一般格式是：
 
@@ -1182,7 +1335,7 @@ $ ./test.sh
 第四个元素为: D
 ```
 
-### 获取数组中的所有元素
+#### 获取数组中的所有元素
 
 使用@ 或 * 可以获取数组中的所有元素，例如：
 
@@ -1207,7 +1360,7 @@ $ ./test.sh
 数组的元素为: A B C D
 ```
 
-### 获取数组的长度
+#### 获取数组的长度
 
 获取数组长度的方法与获取字符串长度的方法相同
 
@@ -1232,7 +1385,7 @@ $ ./test.sh
 数组元素个数为: 4
 ```
 
-## Shell 基本运算符
+### Shell 基本运算符
 
 Shell 和其他编程语言一样，支持多种运算符，包括：
 
@@ -1349,7 +1502,7 @@ expr 是一款表达式计算工具，使用它能完成表达式的求值操作
 - **-S**: 判断某文件是否 socket。
 - **-L**: 检测文件是否存在并且是一个符号链接。
 
-## Shell echo命令
+### Shell echo命令
 
 Shell 的 echo 指令与 PHP 的 echo 指令类似，都是用于字符串的输出。命令格式：
 
@@ -1461,7 +1614,7 @@ echo `date`
 Mon Jan 3 14:04:32 CST 2022
 ```
 
-## Shell printf 命令
+### Shell printf 命令
 
 printf 命令模仿 C 程序库（library）里的 printf() 程序。
 
@@ -1480,7 +1633,7 @@ printf  format-string  [arguments...]
 - **format-string:** 为格式控制字符串
 - **arguments:** 为参数列表。
 
-## printf 的转义序列
+### printf 的转义序列
 
 | 序列  | 说明                                                         |
 | :---- | :----------------------------------------------------------- |
@@ -1496,7 +1649,7 @@ printf  format-string  [arguments...]
 | \ddd  | 表示1到3位数八进制值的字符。仅在格式字符串中有效             |
 | \0ddd | 表示1到3位的八进制值字符                                     |
 
-## 数值测试
+### 数值测试
 
 | 参数 | 说明           |
 | :--- | :------------- |
@@ -1507,7 +1660,7 @@ printf  format-string  [arguments...]
 | -lt  | 小于则为真     |
 | -le  | 小于等于则为真 |
 
-## 字符串测试
+### 字符串测试
 
 | 参数      | 说明                     |
 | :-------- | :----------------------- |
@@ -1516,7 +1669,7 @@ printf  format-string  [arguments...]
 | -z 字符串 | 字符串的长度为零则为真   |
 | -n 字符串 | 字符串的长度不为零则为真 |
 
-## 文件测试
+### 文件测试
 
 | 参数      | 说明                                 |
 | :-------- | :----------------------------------- |
@@ -1530,7 +1683,7 @@ printf  format-string  [arguments...]
 | -c 文件名 | 如果文件存在且为字符型特殊文件则为真 |
 | -b 文件名 | 如果文件存在且为块特殊文件则为真     |
 
-## Shell 流程控制
+### Shell 流程控制
 
 和 Java、PHP 等语言不一样，sh 的流程控制不可为空。
 

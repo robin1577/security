@@ -537,7 +537,7 @@ msfvenom是用来生成木马文件的，然后在靶机上运行，本机设置
 
         -   添加路由的目的是为了**让我们的MSF其他模块能访问内网的其他主机,这样我们后面搭建代理后，代理软件是按我们的路由走的。**
         -   msf界面：route print查看msf设置的路由。与linux设置的路由不一样。
-        -   msf界面：routeadd0.0.0.0 0.0.0.0 session_id 提供个msf的sock_proxy模块使用
+        -   msf界面：route add 0.0.0.0 0.0.0.0 session_id 提供个msf的sock_proxy模块使用
 
     - 搭建代理：相当于是v2rayn这个软件，提供代理服务。
 
@@ -565,7 +565,7 @@ msfvenom是用来生成木马文件的，然后在靶机上运行，本机设置
         -   ![image11](metasploit.assets/image11.png)
     -   然后执行命令前加上 proxychains命令 ，工具的数据就会通过代理了。
         比如nmap
-        -   proxychainsnmap -p1-10000-Pn -sT**x**.**x**.**x**.**x**#在打开其他程序前加上proxychains
+        -   proxychains nmap -p1-10000-Pn -sT**x**.**x**.**x**.**x**#在打开其他程序前加上proxychains
 
 - portfwd 是meterpreter提供的一种基本的端口转发。porfwd可以反弹单个端口到本地，并且监听，使用方法如下
 

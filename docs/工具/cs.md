@@ -691,6 +691,10 @@ Cobalt Strike 通过团队服务器发送钓鱼邮件。
 
 ### Tor Fronting
 
+## CrossC2配置
+
+
+
 ## cs脚本
 
 > 一些脚本
