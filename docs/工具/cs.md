@@ -699,11 +699,11 @@ Cobalt Strike 通过团队服务器发送钓鱼邮件。
 
 > 一些脚本
 >
-> https://github.com/Mikasazero/Cobalt-Strike
+> https://github.com/lintstar/LSTAR 
 >
-> https://github.com/harleyQu1nn/AggressorScripts
+> https://github.com/yanghaoi/CobaltStrike_CNA  权限维持脚本
 >
-> https://github.com/yanghaoi/CobaltStrike_CNA
+> https://github.com/rsmudge/ElevateKit 提权脚本
 >
 > 官方开发文档：
 >
@@ -1016,6 +1016,10 @@ closef($handle);
 
 - 感觉是个宏，就是把include的代码放到对应位置。
 
+- ```
+    include(script_resource("modules/工作目录.cna"));
+    ```
+
 #### 文件路径:
 
 任何使用到本地文件的都需要，`script_resource(path)`
@@ -1241,7 +1245,7 @@ popup beacon_bottom{
 
 ##### 传递exe文件并执行：bexecute_assembly
 
-### 输入，输出框
+输入，输出框
 
 #### 输入框-dialog
 
