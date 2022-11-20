@@ -315,7 +315,33 @@ eval("u'" + x + "'")
 '一'
 ```
 
+## 0x03 python打包exe
 
+- ```
+    pip install pyinstaller
+    pip install pypiwin32
+    ```
+
+- 执行下面的命令进行打包
+
+    - ```
+        pyinstaller -F -w exp.py
+        
+        -w 执行的时候黑色控制台会消失
+        -i xx.ico   加入图标
+        ```
+        
+    - 打包完成后会在dist目录生成exe文件：
+
+- 打包一个项目
+
+    - ```
+        pyinstaller -F [-w] [项目的主文件] –hidden-import [其他的python文件]
+        
+        
+        ```
+
+- 
 
  
 
